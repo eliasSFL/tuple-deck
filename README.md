@@ -17,10 +17,11 @@ the extension reads state straight from the CLI instead of guessing.
 
 ## What it does
 
-**Top bar:** a Tuple icon that dims when Tuple is stopped, logged out or offline,
-turns amber while a call rings (in or out), and goes green during a call. A
-running call timer is shown next to it, plus a crossed-out microphone when you
-are muted.
+**Top bar:** Tuple's own app icon (the one its Linux client installs, looked up
+by name, not bundled; a generic call icon if it isn't installed). It fades when
+Tuple is stopped, logged out or offline, and gets an amber dot while a call
+rings (in or out) and a green dot during a call, next to a running call timer
+and a crossed-out microphone when you are muted.
 
 **Menu:**
 

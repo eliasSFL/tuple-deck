@@ -13,7 +13,9 @@ import {TupleStore} from './lib/store.js';
 export default class TupleDeckExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
-        this._gicon = Gio.icon_new_for_string(`${this.path}/icons/tuple-deck-symbolic.svg`);
+        // Tuple's own app icon, as installed with the client (Icon=tuple in
+        // its .desktop file); a generic call icon where it isn't installed.
+        this._gicon = Gio.ThemedIcon.new_from_names(['tuple', 'call-start-symbolic']);
         this._cli = new TupleCli(() => this._settings.get_string('tuple-path'));
         this._store = new TupleStore(this._cli, this._settings);
         this._notifier = new Notifier(this._gicon);

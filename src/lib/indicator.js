@@ -61,7 +61,24 @@ class TupleIndicator extends PanelMenu.Button {
 
     _buildPanelButton() {
         const box = new St.BoxLayout({style_class: 'panel-status-menu-box'});
+        // Tuple's icon is full colour, so status can't tint it; a small dot
+        // in its corner shows ringing / in a call instead.
+        const iconStack = new St.Widget({
+            layout_manager: new Clutter.BinLayout(),
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         this._icon = new St.Icon({gicon: this._gicon, style_class: 'system-status-icon'});
+        this._badge = new St.Widget({
+            style_class: 'tuple-deck-badge',
+            x_align: Clutter.ActorAlign.END,
+            y_align: Clutter.ActorAlign.END,
+            // Hang it off the corner so it doesn't cover the logo.
+            translation_x: 3,
+            translation_y: 2,
+            visible: false,
+        });
+        iconStack.add_child(this._icon);
+        iconStack.add_child(this._badge);
         this._micIcon = new St.Icon({
             icon_name: 'microphone-disabled-symbolic',
             style_class: 'system-status-icon',
@@ -72,7 +89,7 @@ class TupleIndicator extends PanelMenu.Button {
             y_align: Clutter.ActorAlign.CENTER,
             visible: false,
         });
-        box.add_child(this._icon);
+        box.add_child(iconStack);
         box.add_child(this._micIcon);
         box.add_child(this._timerLabel);
         this.add_child(box);
@@ -473,25 +490,14 @@ class TupleIndicator extends PanelMenu.Button {
         const status = this._store.status;
         const call = this._store.call;
         const inCall = status === Status.IN_CALL;
-        const styles = {
-            [Status.DOWN]: 'tuple-deck-inactive',
-            [Status.SIGNED_OUT]: 'tuple-deck-inactive',
-            [Status.OFFLINE]: 'tuple-deck-inactive',
-            [Status.INCOMING]: 'tuple-deck-ringing',
-            [Status.OUTGOING]: 'tuple-deck-ringing',
-            [Status.IN_CALL]: 'tuple-deck-live',
-        };
-        for (const cls of new Set(Object.values(styles)))
-            this.remove_style_class_name(cls);
-        if (styles[status])
-            this.add_style_class_name(styles[status]);
+        const inactive = status === Status.DOWN || status === Status.SIGNED_OUT || status === Status.OFFLINE;
+        this._icon.opacity = inactive ? 110 : 255;
 
-        if (status === Status.INCOMING)
-            this._icon.icon_name = 'call-incoming-symbolic';
-        else if (status === Status.OUTGOING)
-            this._icon.icon_name = 'call-outgoing-symbolic';
-        else
-            this._icon.gicon = this._gicon;
+        const ringing = status === Status.INCOMING || status === Status.OUTGOING;
+        this._badge.visible = ringing || inCall;
+        this._badge.remove_style_class_name('ringing');
+        this._badge.remove_style_class_name('live');
+        this._badge.add_style_class_name(ringing ? 'ringing' : 'live');
 
         const muted = inCall && (selfMuted(call, this._store.selfId) ?? this._mutedGuess);
         this._micIcon.visible = !!muted;

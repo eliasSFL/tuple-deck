@@ -1,14 +1,17 @@
-/* Panel button states */
-.tuple-deck-inactive .system-status-icon {
-  opacity: 0.45;
+/* Status badge on the panel icon */
+.tuple-deck-badge {
+  width: 5px;
+  height: 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.7);
 }
 
-.tuple-deck-ringing .system-status-icon {
-  color: #f6d32d;
+.tuple-deck-badge.ringing {
+  background-color: #f6d32d;
 }
 
-.tuple-deck-live .system-status-icon {
-  color: #57e389;
+.tuple-deck-badge.live {
+  background-color: #33d17a;
 }
 
 .tuple-deck-timer {

@@ -44,6 +44,14 @@ mkdir -p "$EXT_DIR"
 ln -s "$REPO/src" "$EXT_DIR/$DECK_UUID"
 ln -s "$REPO/dev/test-helper" "$EXT_DIR/$HELPER_UUID"
 
+# The extension shows Tuple's installed app icon; mirror it into the sandbox
+# so screenshots look like the real thing (the generic fallback otherwise).
+for icon in "${XDG_DATA_HOME:-$HOME/.local/share}"/icons/hicolor/*/apps/tuple.png; do
+    [[ -f "$icon" ]] || continue
+    dest="$SB/data/icons/hicolor/$(basename "$(dirname "$(dirname "$icon")")")/apps"
+    mkdir -p "$dest" && cp "$icon" "$dest/"
+done
+
 cp "$REPO"/dev/fixtures/common/*.json "$SB/mock/"
 cp "$REPO/dev/fixtures/idle/state.json" "$SB/mock/"
 

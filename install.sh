@@ -12,7 +12,6 @@ gnome-extensions pack "$REPO/src" \
     --force \
     --out-dir "$REPO/dist" \
     --extra-source=lib \
-    --extra-source=icons \
     --schema=schemas/org.gnome.shell.extensions.tuple-deck.gschema.xml
 ZIP="$REPO/dist/$UUID.shell-extension.zip"
 echo "Built $ZIP"
