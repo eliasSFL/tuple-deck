@@ -21,8 +21,19 @@ DECK_UUID="tuple-deck@eliassfl.github.io"
 HELPER_UUID="tuple-deck-test@eliassfl.github.io"
 
 SB="$(mktemp -d -t tuple-deck-sandbox.XXXXXX)"
-# xdg-document-portal leaves a FUSE mount in the runtime dir.
-trap 'fusermount3 -uz "$SB/runtime/doc" 2>/dev/null; rm -rf "$SB"' EXIT
+cleanup() {
+    # The extension's CLI streams outlive the killed shell (they get reparented
+    # to systemd), so reap everything that still carries this sandbox's env.
+    local env
+    for env in /proc/[0-9]*/environ; do
+        grep -qzx "TUPLE_MOCK_DIR=$SB/mock" "$env" 2>/dev/null &&
+            kill "$(cut -d/ -f3 <<<"$env")" 2>/dev/null
+    done
+    # xdg-document-portal leaves a FUSE mount in the runtime dir.
+    fusermount3 -uz "$SB/runtime/doc" 2>/dev/null
+    rm -rf "$SB"
+}
+trap cleanup EXIT
 mkdir -p "$SB"/{config,data,cache,state,runtime,mock}
 chmod 700 "$SB/runtime"
 rm -rf "$OUT" && mkdir -p "$OUT"
