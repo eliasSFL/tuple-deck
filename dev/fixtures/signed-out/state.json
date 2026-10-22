@@ -1,0 +1,2 @@
+{"in_call": false, "call": null, "user": null, "contacts": {"total": 0, "online": 0, "busy": 0}, "rooms": {"personal": 0, "team": 0, "occupied": 0},
+ "connection": {"websocket_state": "connected", "is_internet_connected": true}, "platform": "linux", "app_version": "v2026_10_21.0", "available_update_version": null}

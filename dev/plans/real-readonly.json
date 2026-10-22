@@ -1,0 +1,8 @@
+[
+  ["eval", "indicator().menu.open(); await wait(800); return {status: deck()._store.status, contacts: deck()._store.contacts.length, rooms: deck()._store.rooms.length, commands: [...deck()._store.commands].length};"],
+  ["shot", "real-01-menu"],
+  ["eval", "indicator()._contactsSub.setSubmenuShown(true); await wait(600);"],
+  ["shot", "real-02-contacts"],
+  ["eval", "indicator()._historySub.setSubmenuShown(true); await wait(1500);"],
+  ["shot", "real-03-history"]
+]

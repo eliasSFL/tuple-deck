@@ -1,0 +1,116 @@
+#!/usr/bin/python3 -I
+"""Stand-in for the `tuple` CLI, for the headless test session (dev/sandbox.sh).
+
+It never talks to Tuple. Streams serve $TUPLE_MOCK_DIR/state.json,
+contacts.json and rooms.json (re-emitted whenever a file changes, like the
+real `follow` commands); every other command is appended to
+$TUPLE_MOCK_DIR/commands.log and succeeds with `{}`.
+"""
+import json
+import os
+import sys
+import time
+
+MOCK_DIR = os.environ.get("TUPLE_MOCK_DIR") or os.path.dirname(os.path.abspath(__file__))
+
+HELP = """Tuple CLI for managing contacts, calls, and application state.
+
+Usage:
+  tuple [command]
+
+Available Commands:
+  agent         Agent operating guidance and communication
+  call          Call lifecycle
+  capture       Capture and inspect call history
+  contacts      People and availability
+  machines      List your other connected machines
+  rooms         Rooms and persistent spaces
+  screen        Capture the shared screen
+  start         Ensure the daemon is started
+  state         Show current application state
+  stop          Stop the daemon
+  version       Print the app version
+
+Deprecated Commands:
+  set           Update a setting with the given value
+  settings      List all settings and their values
+  share         Share your screen
+  unshare       Unshare your screen
+
+Flags:
+      --format format   output format: "text" or "json" (default text)
+"""
+
+SETTINGS = """overlay | 1 | Show "overlay" annotation window when sharing screen (0|1)
+start-calls-muted | 0 | Start with microphone muted when joining a call (0|1)
+capture | portal | Screen capture mechanism (auto|x11|portal)
+guest-mode | annotation | Current mode in screen window (annotation|control)
+transcription-model |  | File path to whisper ggml model"""
+
+
+def path(name):
+    return os.path.join(MOCK_DIR, name)
+
+
+def read(name, default=None):
+    try:
+        with open(path(name)) as f:
+            return f.read()
+    except FileNotFoundError:
+        return default
+
+
+def follow(name):
+    last = None
+    while True:
+        text = read(name)
+        if text is not None and text != last:
+            last = text
+            print(json.dumps(json.loads(text)), flush=True)
+        time.sleep(0.3)
+
+
+def main():
+    args = sys.argv[1:]
+    if args[:2] == ["--format", "json"]:
+        args = args[2:]
+    elif "--format" in args:
+        i = args.index("--format")
+        args = args[:i] + args[i + 2:]
+
+    if read("down.flag") is not None and args[:1] != ["--help"] and args != ["start"]:
+        print('{"error":"The Tuple app is not reachable"}')
+        sys.exit(1)
+
+    with open(path("commands.log"), "a") as log:
+        log.write(" ".join(args) + "\n")
+
+    if args in (["--help"], []):
+        print(HELP)
+    elif args == ["state", "follow"]:
+        follow("state.json")
+    elif args == ["contacts", "follow"]:
+        follow("contacts.json")
+    elif args == ["rooms", "follow"]:
+        follow("rooms.json")
+    elif args == ["settings"]:
+        print(SETTINGS)
+    elif args == ["version"]:
+        print("v2026_10_21.0")
+    elif args[:2] == ["machines", "list"]:
+        print(read("machines.json", "[]"))
+    elif args[:2] == ["capture", "list"]:
+        print(read("captures.json", '{"error":"transcription store unavailable","error_code":503}'))
+        if read("captures.json") is None:
+            sys.exit(1)
+    elif args[:2] == ["call", "start"]:
+        # Simulate the callee not answering, to exercise exit status 2.
+        time.sleep(0.5)
+        print('{"outcome":"unanswered"}')
+        sys.exit(2)
+    else:
+        print("{}")
+
+
+if __name__ == "__main__":
+    main()

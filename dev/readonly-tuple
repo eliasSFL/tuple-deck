@@ -1,0 +1,22 @@
+#!/bin/bash
+# Lets the sandbox read from the real Tuple app without being able to change
+# anything: only the read-only commands below are passed through, with the
+# real XDG dirs restored so the CLI can find its daemon. Everything else fails.
+set -euo pipefail
+
+args=("$@")
+[[ "${args[0]:-}" == "--format" ]] && args=("${args[@]:2}")
+case "${args[*]}" in
+    "state follow" | "contacts follow" | "rooms follow" | "settings" | "version" | "--help" | \
+    "machines list" | "capture list --limit "[0-9]*)
+        ;;
+    *)
+        echo '{"error":"blocked by dev/readonly-tuple"}'
+        exit 1
+        ;;
+esac
+
+export XDG_CONFIG_HOME="$REAL_XDG_CONFIG_HOME" XDG_DATA_HOME="$REAL_XDG_DATA_HOME" \
+       XDG_CACHE_HOME="$REAL_XDG_CACHE_HOME" XDG_STATE_HOME="$REAL_XDG_STATE_HOME" \
+       XDG_RUNTIME_DIR="$REAL_XDG_RUNTIME_DIR"
+exec "$REAL_TUPLE" "$@"

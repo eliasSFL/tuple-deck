@@ -1,0 +1,6 @@
+{
+  "uuid": "tuple-deck-test@eliassfl.github.io",
+  "name": "Tuple Deck test helper",
+  "description": "Drives Tuple Deck inside the headless sandbox (dev/sandbox.sh). Never install this in a real session.",
+  "shell-version": ["51"]
+}

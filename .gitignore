@@ -1,0 +1,4 @@
+dev/out/
+src/schemas/gschemas.compiled
+*.shell-extension.zip
+dist/

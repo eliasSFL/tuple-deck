@@ -1,0 +1,8 @@
+{"in_call": true, "call": {"id": "f00d0001-0000-0000-0000-000000000000", "state": "ringing",
+  "participants": [{"id": 1000, "short_name": "Alex"}, {"id": 2, "full_name": "Ada Lovelace", "short_name": "Ada"}]},
+  "user": {"id": 1000, "email": "you@example.com", "short_name": "Alex"},
+  "contacts": {"total": 5, "online": 2, "busy": 1, "favorites": {"total": 3, "online": 1, "online_names": ["Ada Lovelace"]}},
+  "rooms": {"personal": 1, "team": 2, "occupied": 1},
+  "invites": 0,
+  "connection": {"websocket_state": "connected", "is_internet_connected": true},
+  "platform": "linux", "app_version": "v2026_10_21.0", "available_update_version": null}

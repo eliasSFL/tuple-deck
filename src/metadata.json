@@ -1,0 +1,9 @@
+{
+  "uuid": "tuple-deck@eliassfl.github.io",
+  "name": "Tuple Deck",
+  "description": "Top-bar control for the Tuple Linux client: presence, calls, contacts, rooms, screen sharing and call history. Drives the official tuple CLI; unofficial and not affiliated with Tuple.",
+  "shell-version": ["51"],
+  "url": "https://github.com/eliasSFL/tuple-deck",
+  "settings-schema": "org.gnome.shell.extensions.tuple-deck",
+  "version-name": "0.1.0"
+}

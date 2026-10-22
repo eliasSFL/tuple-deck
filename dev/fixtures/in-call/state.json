@@ -1,0 +1,12 @@
+{"in_call": true, "call": {"id": "c0ffee12-3456-7890-abcd-ef0123456789", "state": "active", "title": "", "summary": "",
+  "started_at": "__AGO_754__", "sharer_user_id": 2,
+  "participants": [
+    {"id": 1000, "email": "you@example.com", "full_name": "Alex Doe", "short_name": "Alex", "muted": false},
+    {"id": 2, "email": "ada@example.com", "full_name": "Ada Lovelace", "short_name": "Ada", "muted": true},
+    {"id": 5, "email": "margaret@example.com", "full_name": "Margaret Hamilton", "short_name": "Margaret", "muted": false}
+  ]}, "user": {"id": 1000, "email": "you@example.com", "short_name": "Alex"},
+  "contacts": {"total": 5, "online": 2, "busy": 1, "favorites": {"total": 3, "online": 1, "online_names": ["Ada Lovelace"]}},
+  "rooms": {"personal": 1, "team": 2, "occupied": 1},
+  "invites": 0,
+  "connection": {"websocket_state": "connected", "is_internet_connected": true},
+  "platform": "linux", "app_version": "v2026_10_21.0", "available_update_version": null}

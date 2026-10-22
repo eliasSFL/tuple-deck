@@ -1,0 +1,93 @@
+/* Panel button states */
+.tuple-deck-inactive .system-status-icon {
+  opacity: 0.45;
+}
+
+.tuple-deck-ringing .system-status-icon {
+  color: #f6d32d;
+}
+
+.tuple-deck-live .system-status-icon {
+  color: #57e389;
+}
+
+.tuple-deck-timer {
+  font-feature-settings: "tnum";
+  padding-left: 4px;
+}
+
+/* Menu */
+.tuple-deck-menu {
+  min-width: 300px;
+}
+
+.tuple-deck-header .tuple-deck-title {
+  font-weight: bold;
+}
+
+.tuple-deck-dim {
+  font-size: smaller;
+  opacity: 0.7;
+}
+
+.tuple-deck-note {
+  max-width: 280px;
+}
+
+.tuple-deck-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  margin: 0 4px;
+  background-color: #77767b;
+}
+
+.tuple-deck-dot.online {
+  background-color: #33d17a;
+}
+
+.tuple-deck-dot.busy {
+  background-color: #f6d32d;
+}
+
+.tuple-deck-icon-button {
+  padding: 4px;
+  border-radius: 99px;
+}
+
+.tuple-deck-icon-button:hover,
+.tuple-deck-icon-button:focus {
+  background-color: rgba(127, 127, 127, 0.25);
+}
+
+.tuple-deck-destructive {
+  color: #ff7b63;
+}
+
+/* Dialogs */
+.tuple-deck-dialog .tuple-deck-entry {
+  margin-top: 12px;
+  min-width: 320px;
+}
+
+.tuple-deck-mono {
+  font-family: monospace;
+  font-size: smaller;
+  margin-top: 8px;
+}
+
+.tuple-deck-search .dialog-list {
+  margin-top: 12px;
+  max-height: 360px;
+}
+
+.tuple-deck-hit {
+  text-align: left;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.tuple-deck-hit:hover,
+.tuple-deck-hit:focus {
+  background-color: rgba(127, 127, 127, 0.2);
+}

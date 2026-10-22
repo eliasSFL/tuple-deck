@@ -1,0 +1,72 @@
+[
+  ["shot", "00-desktop"],
+
+  ["eval", "indicator().menu.open(); await wait(500);"],
+  ["shot", "01-idle-menu"],
+  ["eval", "indicator()._contactsSub.setSubmenuShown(true); await wait(500);"],
+  ["shot", "02-contacts"],
+
+  ["click", "indicator()._contactItems.get('4')._star"],
+  ["expect", "^contacts favorite linus@example.com$"],
+  ["eval", "return indicator().menu.isOpen ? 'menu still open after star click' : 'MENU CLOSED after star click';"],
+
+  ["click", "indicator()._contactItems.get('2')"],
+  ["expect", "^call start ada@example.com$"],
+  ["wait", 1500],
+  ["shot", "03-unanswered-notification"],
+
+  ["eval", "indicator().menu.open(); indicator()._roomsSub.setSubmenuShown(true); await wait(500);"],
+  ["shot", "04-rooms"],
+  ["click", "indicator()._roomItems.get('m0bpr0')"],
+  ["expect", "^rooms join https://tuple.app/c/m0bpr0$"],
+
+  ["scenario", "in-call"],
+  ["eval", "indicator().menu.open(); await wait(500);"],
+  ["shot", "05-in-call-menu"],
+  ["click", "indicator()._muteSwitch"],
+  ["expect", "^call mute$"],
+  ["eval", "return 'menu open after switch: ' + indicator().menu.isOpen;"],
+  ["eval", "Main.overview.hide(); indicator().menu.open(); await wait(500); indicator()._participantsSub.setSubmenuShown(true); await wait(500);"],
+  ["shot", "06-in-call-participants"],
+  ["eval", "indicator()._moreSub.setSubmenuShown(true); await wait(500);"],
+  ["shot", "07-in-call-more"],
+  ["click", "indicator()._moreSub.menu._getMenuItems()[1]"],
+  ["expect", "^call react trombone$"],
+  ["eval", "indicator().menu.open(); await wait(500); indicator()._contactsSub.setSubmenuShown(true); await wait(600);"],
+  ["shot", "07b-in-call-add-someone"],
+  ["click", "indicator()._contactItems.get('6')"],
+  ["expect", "^call participants add ken@example.com$"],
+
+  ["scenario", "outgoing"],
+  ["eval", "indicator().menu.open(); await wait(500);"],
+  ["shot", "08-outgoing"],
+  ["eval", "indicator().menu.close();"],
+
+  ["scenario", "incoming"],
+  ["wait", 800],
+  ["shot", "09-incoming-notification"],
+  ["eval", "indicator().menu.open(); await wait(500);"],
+  ["shot", "10-incoming-menu"],
+  ["click", "indicator()._incomingSection._getMenuItems()[1]"],
+  ["expect", "^call accept --call beef0001-0000-0000-0000-000000000000$"],
+
+  ["scenario", "history"],
+  ["eval", "indicator().menu.open(); indicator()._historySub.setSubmenuShown(true); await wait(1200);"],
+  ["shot", "11-history"],
+  ["eval", "indicator().menu.close();"],
+
+  ["scenario", "signed-out"],
+  ["eval", "indicator().menu.open(); await wait(500);"],
+  ["shot", "12-signed-out"],
+  ["eval", "indicator().menu.close();"],
+
+  ["scenario", "down"],
+  ["eval", "deck()._store.reconnect(); await wait(2500); indicator().menu.open(); await wait(500);"],
+  ["shot", "13-down"],
+  ["eval", "indicator().menu.close();"],
+
+  ["scenario", "idle"],
+  ["eval", "deck()._store.reconnect(); await wait(2500); return deck()._store.status;"],
+  ["eval", "deck().openPreferences(); await wait(6000);"],
+  ["shot", "14-prefs"]
+]

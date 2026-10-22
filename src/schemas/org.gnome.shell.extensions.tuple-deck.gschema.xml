@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.tuple-deck" path="/org/gnome/shell/extensions/tuple-deck/">
+    <key name="tuple-path" type="s">
+      <default>''</default>
+      <summary>Path to the tuple CLI</summary>
+      <description>Leave empty to look on PATH, then $XDG_BIN_HOME and ~/.local/bin. When set, only this path is used.</description>
+    </key>
+    <key name="show-call-timer" type="b">
+      <default>true</default>
+      <summary>Show the call duration in the top bar</summary>
+    </key>
+    <key name="notify-incoming" type="b">
+      <default>true</default>
+      <summary>Notify on incoming calls</summary>
+    </key>
+    <key name="notify-favorites-online" type="b">
+      <default>false</default>
+      <summary>Notify when a favorite comes online</summary>
+    </key>
+    <key name="update-command" type="s">
+      <default>'update-tuple'</default>
+      <summary>Command that installs the latest Tuple release</summary>
+    </key>
+    <key name="debug-log" type="b">
+      <default>false</default>
+      <summary>Log call state changes</summary>
+      <description>Appends how Tuple reports each call state change to ~/.cache/tuple-deck/state-log.ndjson.</description>
+    </key>
+  </schema>
+</schemalist>

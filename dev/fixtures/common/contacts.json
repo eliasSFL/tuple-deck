@@ -1,0 +1,7 @@
+[
+  {"id": 2, "email": "ada@example.com", "full_name": "Ada Lovelace", "short_name": "Ada", "kind": "teammate", "favorited": true, "recent": true, "status": "online"},
+  {"id": 3, "email": "grace@example.com", "full_name": "Grace Hopper", "short_name": "Grace", "kind": "teammate", "favorited": true, "recent": false, "status": "busy"},
+  {"id": 4, "email": "linus@example.com", "full_name": "Linus Torvalds", "short_name": "Linus", "kind": "external", "favorited": false, "recent": false, "status": "offline"},
+  {"id": 5, "email": "margaret@example.com", "full_name": "Margaret Hamilton", "short_name": "Margaret", "kind": "teammate", "favorited": false, "recent": true, "status": "online"},
+  {"id": 6, "email": "ken@example.com", "full_name": "Ken Thompson", "short_name": "Ken", "kind": "teammate", "favorited": true, "recent": false, "status": "offline"}
+]

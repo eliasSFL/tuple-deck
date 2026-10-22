@@ -1,0 +1,5 @@
+[
+  {"slug": "p3rs0n", "name": "", "http_value": "https://tuple.app/c/p3rs0n", "created_at": "2024-07-10T23:57:26Z", "favorited": false, "members": [], "kind": "personal", "active_call": false},
+  {"slug": "w33kly", "name": "Weekly sync ", "http_value": "https://tuple.app/c/w33kly", "created_at": "2026-08-24T01:02:56Z", "favorited": true, "members": [{"id": 3, "full_name": "Grace Hopper"}, {"id": 6, "full_name": "Ken Thompson"}], "kind": "team", "active_call": true},
+  {"slug": "m0bpr0", "name": "Mob programming", "http_value": "https://tuple.app/c/m0bpr0", "created_at": "2026-09-01T01:02:56Z", "favorited": false, "members": [], "kind": "team", "active_call": false}
+]
