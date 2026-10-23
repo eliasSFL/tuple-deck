@@ -136,6 +136,7 @@ export default class TestHelper extends Extension {
 
         const ctx = {
             Main,
+            GLib,
             wait,
             readText,
             indicator: () => this._indicator,
@@ -164,7 +165,7 @@ export default class TestHelper extends Extension {
             }
             case 'eval': {
                 // eslint-disable-next-line no-new-func
-                const fn = new Function('ctx', `const {indicator, deck, Main, wait, click, shot, readText} = ctx;
+                const fn = new Function('ctx', `const {indicator, deck, Main, wait, click, shot, readText, GLib} = ctx;
                     return (async () => { ${arg} })();`);
                 const value = await fn(ctx);
                 if (value !== undefined)

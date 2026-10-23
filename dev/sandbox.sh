@@ -67,8 +67,10 @@ if [[ "${TUPLE_DECK_REAL:-}" == 1 ]]; then
 fi
 export TUPLE_BIN
 
+# XDG_BIN_HOME too: the bundled update-tuple installs there, and must never
+# overwrite the real ~/.local/bin/tuple from a test.
 export XDG_CONFIG_HOME="$SB/config" XDG_DATA_HOME="$SB/data" XDG_CACHE_HOME="$SB/cache" \
-       XDG_STATE_HOME="$SB/state" XDG_RUNTIME_DIR="$SB/runtime"
+       XDG_STATE_HOME="$SB/state" XDG_RUNTIME_DIR="$SB/runtime" XDG_BIN_HOME="$SB/bin"
 export TUPLE_MOCK_DIR="$SB/mock" TUPLE_DECK_TEST_PLAN="$PLAN" TUPLE_DECK_TEST_OUT="$OUT" \
        TUPLE_DECK_FIXTURES="$REPO/dev/fixtures"
 export SB REPO OUT DECK_UUID HELPER_UUID

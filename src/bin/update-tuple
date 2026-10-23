@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# update-tuple — install/update the Tuple pair-programming client (user-local, no sudo).
+#
+#   update-tuple              install latest; skips if already up to date
+#   update-tuple --force|-f   re-install even if current
+#   update-tuple <version>    pin a release, e.g. v2026_09_07.2
+#
+# Tuple ships no Linux package for any distro, so this stays hand-rolled.
+# Bundled with Tuple Deck, which runs it from the "Update Tuple" menu item.
+set -euo pipefail
+
+BUCKET="https://tuple-client-releases.s3.amazonaws.com"
+BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+BIN="$BIN_DIR/tuple"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/tuple"
+STATE_FILE="$STATE_DIR/version"
+
+# Tuple publishes x86_64 and arm64 builds; pick the one matching this machine.
+case "$(uname -m)" in
+  x86_64|amd64)  ARCH="x86_64" ;;
+  aarch64|arm64) ARCH="arm64" ;;
+  *) echo "update-tuple: unsupported architecture '$(uname -m)' (Tuple ships x86_64 and arm64)" >&2
+     exit 1 ;;
+esac
+
+FORCE=0
+WANT=""
+for arg in "$@"; do
+  case "$arg" in
+    -f|--force) FORCE=1 ;;
+    v[0-9]*)    WANT="$arg" ;;
+    -h|--help)  sed -n '2,8p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) echo "update-tuple: unknown argument '$arg'" >&2; exit 2 ;;
+  esac
+done
+
+die() { echo "update-tuple: $*" >&2; exit 1; }
+
+# --- current version -------------------------------------------------------
+# Reads the version out of a tuple binary. Since v2026_10_21.0 that's
+# `tuple version`; older builds (still reachable via a pinned <version>) have no
+# such command but banner the version on line 1 of bare `tuple`, so fall back
+# to that. No pipes on purpose: `head` closing the pipe early SIGPIPEs the
+# binary, and under `set -o pipefail` that turns the whole pipeline into a
+# failure, firing any `||` fallback on top of a perfectly good match.
+version_of() {
+  local out re='v[0-9]{4}_[0-9]{2}_[0-9]{2}\.[0-9]+'
+  out="$("$1" version 2>/dev/null || true)"
+  [[ "$out" =~ $re ]] || out="$("$1" 2>/dev/null || true)"
+  [[ "$out" =~ $re ]] && printf '%s' "${BASH_REMATCH[0]}"
+  return 0
+}
+
+current_version() {
+  [[ -x "$BIN" ]] || return 0
+  local v
+  v="$(version_of "$BIN")"
+  [[ -n "$v" ]] && { echo "$v"; return 0; }
+  [[ -r "$STATE_FILE" ]] && head -1 "$STATE_FILE"      # fallback: recorded at last install
+  return 0
+}
+
+# --- latest version --------------------------------------------------------
+# The bucket stopped allowing public listing (403) in Sept 2026. tuple.app/linux
+# now asks this API instead; it returns {"version","sha256","url"}.
+LATEST_API="https://production.tuple.app/latest_version/linux?arch=$ARCH"
+SHA256=""
+URL=""
+
+CURRENT="$(current_version || true)"
+if [[ -n "$WANT" ]]; then
+  TARGET="$WANT"
+else
+  JSON="$(curl -fsS -H 'Accept: application/tuple.app; version=1' "$LATEST_API")" \
+    || die "could not query latest version ($LATEST_API)"
+  [[ "$JSON" =~ \"version\":\"(v[0-9]{4}_[0-9]{2}_[0-9]{2}\.[0-9]+)\" ]] \
+    || die "no release version in API response: $JSON"
+  TARGET="${BASH_REMATCH[1]}"
+  [[ "$JSON" =~ \"sha256\":\"([0-9a-f]{64})\" ]] && SHA256="${BASH_REMATCH[1]}"
+  [[ "$JSON" =~ \"url\":\"(https://[^\"]+)\" ]] && URL="${BASH_REMATCH[1]}"
+fi
+
+echo "Installed: ${CURRENT:-none}"
+echo "Target:    $TARGET"
+
+if [[ "$FORCE" -eq 0 && -n "$CURRENT" && "$CURRENT" == "$TARGET" ]]; then
+  echo "Already up to date. (--force to reinstall)"
+  exit 0
+fi
+
+# --- download + sanity check ----------------------------------------------
+# Prefer the API's own download URL; pinned versions build it from the bucket.
+[[ -n "$URL" ]] || URL="$BUCKET/linux/$TARGET/$ARCH/tuple"
+TMP="$(mktemp -t tuple.XXXXXX)"
+trap 'rm -f "$TMP"' EXIT
+
+echo "Downloading $URL"
+curl -fL --progress-bar "$URL" -o "$TMP" || die "download failed (is '$TARGET' a real release?)"
+
+# Must be a real ELF executable, not an S3 error page.
+[[ "$(head -c4 "$TMP" | od -An -tx1 | tr -d ' \n')" == "7f454c46" ]] \
+  || die "downloaded file is not an ELF binary — refusing to install"
+
+# The API publishes a checksum for the latest release (not for pinned versions).
+if [[ -n "$SHA256" ]]; then
+  [[ "$(sha256sum "$TMP" | cut -d' ' -f1)" == "$SHA256" ]] \
+    || die "sha256 mismatch — refusing to install"
+  echo "sha256 verified."
+fi
+
+chmod +x "$TMP"
+NEW_VERSION="$(version_of "$TMP")"
+[[ -n "$NEW_VERSION" ]] || NEW_VERSION="$TARGET"
+
+# --- install ---------------------------------------------------------------
+mkdir -p "$BIN_DIR" "$STATE_DIR"
+install -m 755 "$TMP" "$BIN"
+echo "$NEW_VERSION" > "$STATE_FILE"
+
+echo
+echo "Done. Tuple is now at version: $NEW_VERSION"
+echo "Installed to: $BIN"
+# The daemon keeps running the OLD binary until it is restarted.
+if pgrep -x tuple >/dev/null 2>&1; then
+  echo "Note: the Tuple daemon is running the previous binary — run 'tuple stop && tuple start' to pick this up."
+else
+  echo "Start the daemon with 'tuple start'."
+fi

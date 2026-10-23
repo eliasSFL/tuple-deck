@@ -1,0 +1,6 @@
+[
+  ["eval", "indicator().menu.open(); await wait(500); return indicator()._updateItem.visible ? 'update item: ' + indicator()._updateItem.label.text : 'UPDATE ITEM HIDDEN';"],
+  ["click", "indicator()._updateItem"],
+  ["eval", "const bin = `${GLib.getenv('XDG_BIN_HOME')}/tuple`; for (let i = 0; i < 120 && !GLib.file_test(bin, GLib.FileTest.EXISTS); i++) await wait(1000); await wait(3000); return GLib.file_test(bin, GLib.FileTest.IS_EXECUTABLE) ? 'installed into sandbox bin' : 'NOT INSTALLED';"],
+  ["shot", "update-done"]
+]

@@ -128,11 +128,14 @@ export default class TupleDeckPreferences extends ExtensionPreferences {
         describeTuple();
         paths.add(tupleRow);
 
-        const updateRow = new Adw.EntryRow({title: 'Update command', show_apply_button: true});
+        const updateRow = new Adw.EntryRow({
+            title: 'Update command (empty = bundled update-tuple)',
+            show_apply_button: true,
+        });
         updateRow.text = settings.get_string('update-command');
         updateRow.connect('apply', () => {
             const text = updateRow.text.trim();
-            let ok = false;
+            let ok = !text;
             try {
                 const [, argv] = GLib.shell_parse_argv(text);
                 ok = !!findProgram(argv[0]);

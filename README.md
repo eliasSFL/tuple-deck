@@ -45,8 +45,7 @@ timer, notifications, the path to `tuple`, the update command and a debug log.
 - The `tuple` CLI, v2026_10_21.0 or newer, logged in. GNOME Shell's PATH usually
   leaves out `~/.local/bin`, so the extension also looks in `~/.local/bin` and
   `$XDG_BIN_HOME`. You can also set an explicit path in Settings.
-- Optional: an `update-tuple` script on PATH or in `~/.local/bin` for the
-  "Update Tuple" item (the command can be changed in Settings).
+- `curl` and `sha256sum` for the "Update Tuple" item (see below).
 
 ## Install
 
@@ -57,6 +56,26 @@ timer, notifications, the path to `tuple`, the update command and a debug log.
 GNOME on Wayland only discovers a newly installed extension at login. Log out and
 back in (then `gnome-extensions enable tuple-deck@eliassfl.github.io` if
 `install.sh` couldn't enable it yet). Updates also need a re-login.
+
+## Updating Tuple
+
+Tuple has no package for any Linux distro, so the extension bundles an updater,
+[`src/bin/update-tuple`](src/bin/update-tuple). When Tuple reports a newer
+release, the menu shows **Update Tuple to vX**. Clicking it runs the script in
+the background:
+
+1. Asks Tuple's release API for the latest version, its download URL and
+   SHA-256 (x86_64 or arm64, picked from `uname -m`).
+2. Skips the download if you're already on that version.
+3. Downloads it, checks that it's an ELF binary and matches the checksum, then
+   installs it to `$XDG_BIN_HOME/tuple` or `~/.local/bin/tuple` (no sudo).
+4. Notifies you, with a **Restart Tuple** button (`tuple stop && tuple start`),
+   because the running daemon keeps the old binary until restarted. The button
+   is left out while you're in a call.
+
+The script also works on its own: `bash src/bin/update-tuple [--force | vYYYY_MM_DD.N]`.
+To use a different updater, set **Settings → Extension → Update command**;
+leave it empty for the bundled one.
 
 ## How it talks to Tuple
 
@@ -95,6 +114,7 @@ src/                    the extension (what gets packed)
   lib/indicator.js      the panel button and menu
   lib/menuItems.js      contact / room / participant rows
   lib/dialogs.js        prompt, confirm, login and search dialogs
+  bin/update-tuple      bundled updater for the tuple CLI (bash)
 tests/model.test.js     gjs -m tests/model.test.js
 dev/sandbox.sh          headless GNOME Shell test run (see below)
 dev/mock-tuple          fake tuple CLI serving dev/fixtures/<scenario>/

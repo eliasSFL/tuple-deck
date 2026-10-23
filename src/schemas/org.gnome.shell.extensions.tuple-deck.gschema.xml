@@ -19,8 +19,9 @@
       <summary>Notify when a favorite comes online</summary>
     </key>
     <key name="update-command" type="s">
-      <default>'update-tuple'</default>
+      <default>''</default>
       <summary>Command that installs the latest Tuple release</summary>
+      <description>Leave empty to use the update-tuple script bundled with the extension.</description>
     </key>
     <key name="debug-log" type="b">
       <default>false</default>

@@ -25,6 +25,7 @@ export default class TupleDeckExtension extends Extension {
             notifier: this._notifier,
             settings: this._settings,
             openPreferences: () => this.openPreferences(),
+            bundledUpdater: `${this.path}/bin/update-tuple`,
         });
         this._indicator = new TupleIndicator({
             store: this._store,

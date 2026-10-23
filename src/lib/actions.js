@@ -26,12 +26,13 @@ function timestamp() {
 }
 
 export class Actions {
-    constructor({cli, store, notifier, settings, openPreferences}) {
+    constructor({cli, store, notifier, settings, openPreferences, bundledUpdater}) {
         this._cli = cli;
         this._store = store;
         this._notifier = notifier;
         this._settings = settings;
         this.openPreferences = openPreferences;
+        this._bundledUpdater = bundledUpdater;
     }
 
     async _do(args, {label, json = true, timeout = 30, success = null} = {}) {
@@ -345,19 +346,27 @@ export class Actions {
 
     // -- updates -------------------------------------------------------------------
 
-    /** Runs the configured updater (default: update-tuple) and offers a daemon restart. */
+    /**
+     * Runs the bundled update-tuple script, or the user's own update command
+     * if one is set, and offers a daemon restart.
+     */
     async update() {
-        let argv;
-        try {
-            [, argv] = GLib.shell_parse_argv(this._settings.get_string('update-command'));
-        } catch (e) {
-            this._notifier.error('Update command is invalid', e.message);
-            return;
-        }
-        const program = findProgram(argv[0]);
-        if (!program) {
-            this._notifier.error('Updater not found', `Couldn't find "${argv[0]}". Set the update command in the extension settings.`);
-            return;
+        let program = '/bin/bash';
+        // Run through bash: packing/installing the zip may drop the exec bit.
+        let argv = [program, this._bundledUpdater];
+        const custom = this._settings.get_string('update-command').trim();
+        if (custom) {
+            try {
+                [, argv] = GLib.shell_parse_argv(custom);
+            } catch (e) {
+                this._notifier.error('Update command is invalid', e.message);
+                return;
+            }
+            program = findProgram(argv[0]);
+            if (!program) {
+                this._notifier.error('Updater not found', `Couldn't find "${argv[0]}". Fix the update command in the extension settings, or clear it to use the bundled one.`);
+                return;
+            }
         }
         this._notifier.notify({title: 'Updating Tuple…', urgency: Urgency.LOW});
         let ok = false;
@@ -371,14 +380,21 @@ export class Actions {
         } catch (e) {
             output = e.message;
         }
-        const lastLine = output.split('\n').filter(Boolean).at(-1) ?? '';
+        // curl's progress bar shares the line with \r redraws; keep the final frame.
+        const lines = output.split('\n').map(l => l.split('\r').at(-1).trim()).filter(Boolean);
         if (!ok) {
-            this._notifier.error('Tuple update failed', lastLine);
+            this._notifier.error('Tuple update failed', lines.at(-1) ?? '');
             return;
         }
+        if (lines.some(l => /^Already up to date/.test(l))) {
+            this._notifier.notify({title: 'Tuple is already up to date', urgency: Urgency.LOW});
+            return;
+        }
+        // update-tuple prints "Done. Tuple is now at version: vX".
+        const version = lines.join('\n').match(/now at version:\s*(\S+)/)?.[1];
         this._notifier.notify({
             title: 'Tuple updated',
-            body: `${lastLine}\nRestart Tuple to start using the new version.`,
+            body: `${version ? `Now at ${version}. ` : ''}Restart Tuple to start using it.`,
             actions: this._inCall ? [] : [['Restart Tuple', () => this.restartDaemon()]],
         });
     }
