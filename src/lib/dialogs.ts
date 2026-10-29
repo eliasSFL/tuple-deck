@@ -5,9 +5,9 @@ import St from 'gi://St';
 import * as Dialog from 'resource:///org/gnome/shell/ui/dialog.js';
 import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
 
-import {formatWhen} from './model.js';
+import {type SearchHit, formatWhen} from './model.js';
 
-function makeEntry(hint, text = '') {
+function makeEntry(hint: string, text = ''): St.Entry {
     return new St.Entry({
         style_class: 'tuple-deck-entry',
         hint_text: hint,
@@ -18,7 +18,9 @@ function makeEntry(hint, text = '') {
 }
 
 /** Resolves with the trimmed text, or null when cancelled or left empty. */
-export function promptText({title, description = '', hint = '', okLabel = 'OK', initial = ''}) {
+export function promptText({title, description = '', hint = '', okLabel = 'OK', initial = ''}: {
+    title: string, description?: string, hint?: string, okLabel?: string, initial?: string,
+}): Promise<string | null> {
     return new Promise(resolve => {
         const dialog = new ModalDialog.ModalDialog({styleClass: 'tuple-deck-dialog'});
         dialog.contentLayout.add_child(new Dialog.MessageDialogContent({title, description}));
@@ -26,9 +28,9 @@ export function promptText({title, description = '', hint = '', okLabel = 'OK', 
         dialog.contentLayout.add_child(entry);
         dialog.setInitialKeyFocus(entry);
 
-        let result = null;
+        let result: string | null = null;
         let done = false;
-        const finish = value => {
+        const finish = (value: string | null) => {
             if (done)
                 return;
             done = true;
@@ -45,13 +47,15 @@ export function promptText({title, description = '', hint = '', okLabel = 'OK', 
     });
 }
 
-export function confirm({title, description = '', okLabel = 'OK', destructive = false}) {
+export function confirm({title, description = '', okLabel = 'OK', destructive = false}: {
+    title: string, description?: string, okLabel?: string, destructive?: boolean,
+}): Promise<boolean> {
     return new Promise(resolve => {
         const dialog = new ModalDialog.ModalDialog({styleClass: 'tuple-deck-dialog'});
         dialog.contentLayout.add_child(new Dialog.MessageDialogContent({title, description}));
         let result = false;
         let done = false;
-        const finish = value => {
+        const finish = (value: boolean) => {
             if (done)
                 return;
             done = true;
@@ -64,7 +68,7 @@ export function confirm({title, description = '', okLabel = 'OK', destructive = 
             {label: okLabel, action: () => finish(true), default: true},
         ]);
         if (destructive)
-            dialog.buttonLayout.get_last_child()?.add_style_class_name('destructive-action');
+            (dialog.buttonLayout.get_last_child() as St.Widget | null)?.add_style_class_name('destructive-action');
         dialog.open();
     });
 }
@@ -73,7 +77,12 @@ export function confirm({title, description = '', okLabel = 'OK', destructive = 
  * Second half of `tuple login`: shows the link it printed and collects the
  * code the browser hands back. Resolves with the code, or null.
  */
-export function promptLoginCode({url, rawOutput, openUri, copyText}) {
+export function promptLoginCode({url, rawOutput, openUri, copyText}: {
+    url: string | null,
+    rawOutput: string,
+    openUri: (uri: string) => void,
+    copyText: (text: string) => void,
+}): Promise<string | null> {
     return new Promise(resolve => {
         const dialog = new ModalDialog.ModalDialog({styleClass: 'tuple-deck-dialog'});
         dialog.contentLayout.add_child(new Dialog.MessageDialogContent({
@@ -96,9 +105,9 @@ export function promptLoginCode({url, rawOutput, openUri, copyText}) {
         dialog.contentLayout.add_child(entry);
         dialog.setInitialKeyFocus(entry);
 
-        let result = null;
+        let result: string | null = null;
         let done = false;
-        const finish = value => {
+        const finish = (value: string | null) => {
             if (done)
                 return;
             done = true;
@@ -107,7 +116,7 @@ export function promptLoginCode({url, rawOutput, openUri, copyText}) {
         };
         dialog.connect('closed', () => resolve(result));
         entry.clutter_text.connect('activate', () => finish(entry.get_text().trim() || null));
-        const buttons = [{label: 'Cancel', action: () => finish(null), key: Clutter.KEY_Escape}];
+        const buttons: Dialog.ButtonInfo[] = [{label: 'Cancel', action: () => finish(null), key: Clutter.KEY_Escape}];
         if (url) {
             buttons.push({label: 'Copy link', action: () => copyText(url)});
             buttons.push({label: 'Open link', action: () => openUri(url)});
@@ -118,10 +127,13 @@ export function promptLoginCode({url, rawOutput, openUri, copyText}) {
     });
 }
 
-const HitRow = GObject.registerClass(
 class HitRow extends St.Button {
-    _init(hit, onPick) {
-        super._init({
+    static {
+        GObject.registerClass(this);
+    }
+
+    constructor(hit: SearchHit, onPick: (hit: SearchHit) => void) {
+        super({
             style_class: 'tuple-deck-hit',
             can_focus: true,
             x_expand: true,
@@ -136,13 +148,16 @@ class HitRow extends St.Button {
         this.set_child(box);
         this.connect('clicked', () => onPick(hit));
     }
-});
+}
 
 /**
  * Searches stored call captures. `search(query)` resolves with
  * {hits, error}; picking a hit calls `onPick(hit)` and closes the dialog.
  */
-export function openSearchDialog({search, onPick}) {
+export function openSearchDialog({search, onPick}: {
+    search: (query: string) => Promise<{hits: SearchHit[], error: string}>,
+    onPick: (hit: SearchHit) => void,
+}): void {
     const dialog = new ModalDialog.ModalDialog({styleClass: 'tuple-deck-dialog tuple-deck-search'});
     dialog.contentLayout.add_child(new Dialog.MessageDialogContent({
         title: 'Search calls',
@@ -154,7 +169,7 @@ export function openSearchDialog({search, onPick}) {
     dialog.contentLayout.add_child(list);
     dialog.setInitialKeyFocus(entry);
 
-    const setMessage = text => {
+    const setMessage = (text: string) => {
         list.list.destroy_all_children();
         list.list.add_child(new St.Label({text, style_class: 'tuple-deck-dim'}));
     };

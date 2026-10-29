@@ -4,6 +4,8 @@
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 
+import type {Json} from './model.js';
+
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 Gio._promisify(Gio.DataInputStream.prototype, 'read_line_async');
 
@@ -13,13 +15,17 @@ const decoder = new TextDecoder();
 // Exit status `tuple call start` uses when the call ends before the callee connects.
 export const EXIT_CALL_UNANSWERED = 2;
 
-function isExecutableFile(path) {
+function isCancelled(e: unknown): boolean {
+    return e instanceof GLib.Error && e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED);
+}
+
+function isExecutableFile(path: string | null): path is string {
     return !!path &&
         GLib.file_test(path, GLib.FileTest.IS_EXECUTABLE) &&
         !GLib.file_test(path, GLib.FileTest.IS_DIR);
 }
 
-function expandHome(path) {
+function expandHome(path: string): string {
     return path.startsWith('~/') ? GLib.build_filenamev([GLib.get_home_dir(), path.slice(2)]) : path;
 }
 
@@ -31,7 +37,7 @@ function expandHome(path) {
  * An explicit path is used as-is with no fallback, so a misconfigured override
  * fails loudly instead of silently driving a different binary.
  */
-export function findProgram(name, explicitPath = '') {
+export function findProgram(name: string, explicitPath = ''): string | null {
     if (explicitPath) {
         const path = expandHome(explicitPath);
         return isExecutableFile(path) ? path : null;
@@ -49,7 +55,7 @@ export function findProgram(name, explicitPath = '') {
  * CLI uses: `{"error": "..."}`, daemon log lines (`12:00:00.000|pid|tid|error|msg`)
  * and cobra's `error: msg` / `Error: msg`.
  */
-export function cleanError(text) {
+export function cleanError(text: string | null | undefined): string {
     if (!text)
         return '';
     const trimmed = text.trim();
@@ -65,35 +71,43 @@ export function cleanError(text) {
     // message first and usage text after it).
     let line = lines.find(l => /\|error\||^error:/i.test(l)) ?? lines[0] ?? '';
     if (line.includes('|'))
-        line = line.split('|').pop();
+        line = line.split('|').pop() ?? '';
     return line.replace(/^error:\s*/i, '').trim();
 }
 
+export interface RunResult {
+    ok: boolean;
+    status: number;
+    stdout: string;
+    stderr: string;
+    data: Json;
+    error: string;
+}
+
+export interface RunOptions {
+    /** pass `--format json` and parse stdout. The deprecated commands
+     * (settings, set, share, ...) reject it, so they run with json: false. */
+    json?: boolean;
+    /** seconds before the process is killed; 0 = never */
+    timeout?: number;
+    cancellable?: Gio.Cancellable | null;
+}
+
 export class TupleCli {
-    /** @param {() => string} getExplicitPath returns the user's override, or '' */
-    constructor(getExplicitPath = () => '') {
+    private _getExplicitPath: () => string;
+
+    /** @param getExplicitPath returns the user's override, or '' */
+    constructor(getExplicitPath: () => string = () => '') {
         this._getExplicitPath = getExplicitPath;
     }
 
-    get binary() {
+    get binary(): string | null {
         return findProgram('tuple', this._getExplicitPath());
     }
 
-    /**
-     * Runs `tuple <args>` to completion.
-     *
-     * @param {string[]} args
-     * @param {object} [opts]
-     * @param {boolean} [opts.json] pass `--format json` and parse stdout. The
-     *   deprecated commands (settings, set, share, ...) reject it, so they run
-     *   with json: false.
-     * @param {number} [opts.timeout] seconds before the process is killed; 0 = never
-     * @param {Gio.Cancellable} [opts.cancellable]
-     * @returns {Promise<{ok: boolean, status: number, stdout: string,
-     *   stderr: string, data: any, error: string}>}
-     */
-    async run(args, {json = true, timeout = 30, cancellable = null} = {}) {
-        const result = {ok: false, status: -1, stdout: '', stderr: '', data: null, error: ''};
+    /** Runs `tuple <args>` to completion. */
+    async run(args: string[], {json = true, timeout = 30, cancellable = null}: RunOptions = {}): Promise<RunResult> {
+        const result: RunResult = {ok: false, status: -1, stdout: '', stderr: '', data: null, error: ''};
         const bin = this.binary;
         if (!bin) {
             result.error = 'The tuple CLI was not found';
@@ -101,11 +115,11 @@ export class TupleCli {
         }
 
         const argv = [bin, ...(json ? ['--format', 'json'] : []), ...args];
-        let proc;
+        let proc: Gio.Subprocess;
         try {
             proc = Gio.Subprocess.new(argv, PIPES);
         } catch (e) {
-            result.error = e.message;
+            result.error = (e as Error).message;
             return result;
         }
 
@@ -123,8 +137,8 @@ export class TupleCli {
             result.stdout = (stdout ?? '').trim();
             result.stderr = (stderr ?? '').trim();
         } catch (e) {
-            if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-                result.error = e.message;
+            if (!isCancelled(e))
+                result.error = (e as Error).message;
             proc.force_exit();
         } finally {
             if (timerId && !timedOut)
@@ -155,9 +169,9 @@ export class TupleCli {
     }
 
     /** Lists top-level command names (current and deprecated) from `tuple --help`. */
-    async commands() {
+    async commands(): Promise<Set<string>> {
         const {stdout} = await this.run(['--help'], {json: false, timeout: 10});
-        const names = new Set();
+        const names = new Set<string>();
         let inList = false;
         for (const line of stdout.split('\n')) {
             if (/^(Available|Deprecated) Commands:/.test(line)) {
@@ -185,7 +199,22 @@ export class TupleCli {
 export class Follower {
     static BACKOFF_SECONDS = [1, 2, 5, 10, 30];
 
-    constructor(cli, args, {onData, onStatus = () => {}}) {
+    private _cli: TupleCli;
+    private _args: string[];
+    private _onData: (data: Json) => void;
+    private _onStatus: (up: boolean, error: string) => void;
+    private _attempt: number;
+    private _proc: Gio.Subprocess | null;
+    private _cancellable: Gio.Cancellable | null;
+    private _retryId: number;
+    private _stopped: boolean;
+    private _up: boolean;
+    private _lastError: string;
+
+    constructor(cli: TupleCli, args: string[], {onData, onStatus = () => {}}: {
+        onData: (data: Json) => void,
+        onStatus?: (up: boolean, error: string) => void,
+    }) {
         this._cli = cli;
         this._args = args;
         this._onData = onData;
@@ -218,7 +247,7 @@ export class Follower {
         this._kill();
     }
 
-    _kill() {
+    private _kill() {
         if (this._retryId) {
             GLib.source_remove(this._retryId);
             this._retryId = 0;
@@ -229,31 +258,31 @@ export class Follower {
         this._proc = null;
     }
 
-    _spawn() {
+    private _spawn() {
         const bin = this._cli.binary;
         if (!bin) {
             this._ended('The tuple CLI was not found');
             return;
         }
-        let proc;
+        let proc: Gio.Subprocess;
         try {
             proc = Gio.Subprocess.new([bin, '--format', 'json', ...this._args],
                 Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE);
         } catch (e) {
-            this._ended(e.message);
+            this._ended((e as Error).message);
             return;
         }
         this._proc = proc;
         this._cancellable = new Gio.Cancellable();
         this._lastError = '';
         const stream = new Gio.DataInputStream({
-            base_stream: proc.get_stdout_pipe(),
+            base_stream: proc.get_stdout_pipe()!,
             close_base_stream: true,
         });
         this._readLoop(proc, stream, this._cancellable).catch(e => logError(e, 'tuple-deck follower'));
     }
 
-    async _readLoop(proc, stream, cancellable) {
+    private async _readLoop(proc: Gio.Subprocess, stream: Gio.DataInputStream, cancellable: Gio.Cancellable) {
         try {
             for (;;) {
                 // eslint-disable-next-line no-await-in-loop
@@ -264,9 +293,9 @@ export class Follower {
                 this._handleLine(typeof line === 'string' ? line : decoder.decode(line));
             }
         } catch (e) {
-            if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+            if (isCancelled(e))
                 return;
-            this._lastError = e.message;
+            this._lastError = (e as Error).message;
         }
         if (this._stopped || proc !== this._proc)
             return;
@@ -274,7 +303,7 @@ export class Follower {
         this._ended(this._lastError || 'Lost connection to the Tuple app');
     }
 
-    _handleLine(line) {
+    private _handleLine(line: string) {
         const text = line.trim();
         if (!text.startsWith('{') && !text.startsWith('[')) {
             // Merged stderr: daemon log lines and plain-text errors.
@@ -282,7 +311,7 @@ export class Follower {
                 this._lastError = cleanError(text);
             return;
         }
-        let data;
+        let data: Json;
         try {
             data = JSON.parse(text);
         } catch {
@@ -300,7 +329,7 @@ export class Follower {
         this._onData(data);
     }
 
-    _ended(error) {
+    private _ended(error: string) {
         if (this._up || this._attempt === 0) {
             this._up = false;
             this._onStatus(false, error);

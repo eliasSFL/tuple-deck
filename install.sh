@@ -1,5 +1,5 @@
 #!/bin/bash
-# Packs the extension and installs it for the current user.
+# Compiles the TypeScript, packs the extension and installs it for the current user.
 #   ./install.sh            build dist/<uuid>.shell-extension.zip and install it
 #   ./install.sh --pack     only build the zip
 set -euo pipefail
@@ -7,8 +7,12 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")" && pwd)"
 UUID="tuple-deck@eliassfl.github.io"
 
+cd "$REPO"
+[[ -d node_modules ]] || npm ci --no-fund --no-audit
+npm run --silent build
+
 mkdir -p "$REPO/dist"
-gnome-extensions pack "$REPO/src" \
+gnome-extensions pack "$REPO/build" \
     --force \
     --out-dir "$REPO/dist" \
     --extra-source=lib \

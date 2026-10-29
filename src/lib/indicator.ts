@@ -1,4 +1,5 @@
 import Clutter from 'gi://Clutter';
+import type Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
@@ -10,22 +11,94 @@ import {
     ContactItem, HeaderItem, HistoryItem, LiveCallItem, ParticipantItem, RoomItem, syncItems,
 } from './menuItems.js';
 import {
+    type Call, type Id, type Machine, type OngoingCall, type Reaction, type TupleState,
     REACTIONS, Status, callStartedAt, callTitle, callerName, formatDuration, isOnline,
     isSelfSharing, participantsOf, selfMuted, sharerId, sortContacts, sortRooms,
 } from './model.js';
+import type {Actions} from './actions.js';
+import type {TupleStore} from './store.js';
 
-const REACTION_LABELS = {airhorn: 'Air horn', trombone: 'Sad trombone', flute: 'Flute'};
+const REACTION_LABELS: Record<Reaction, string> = {airhorn: 'Air horn', trombone: 'Sad trombone', flute: 'Flute'};
+
+type LabelItem = PopupMenu.PopupMenuItem | PopupMenu.PopupImageMenuItem;
+type Showable = Clutter.Actor | PopupMenu.PopupMenuSection;
 
 // Items are actors; sections are not, but expose one as .actor.
-function setVisible(...pairs) {
-    for (let i = 0; i < pairs.length; i += 2)
-        (pairs[i].actor ?? pairs[i]).visible = !!pairs[i + 1];
+function setVisible(...pairs: Array<Showable | unknown>) {
+    for (let i = 0; i < pairs.length; i += 2) {
+        const target = pairs[i] as Showable & {actor?: Clutter.Actor};
+        (target.actor ?? target as Clutter.Actor).visible = !!pairs[i + 1];
+    }
 }
 
-export const TupleIndicator = GObject.registerClass(
-class TupleIndicator extends PanelMenu.Button {
-    _init({store, actions, settings, gicon}) {
-        super._init(0.5, 'Tuple', false);
+export class TupleIndicator extends PanelMenu.Button {
+    static {
+        GObject.registerClass(this);
+    }
+
+    // Created with a menu (dontCreateMenu = false), never the dummy one.
+    declare menu: PopupMenu.PopupMenu;
+
+    private _store: TupleStore;
+    private _actions: Actions;
+    private _settings: Gio.Settings;
+    private _gicon: Gio.Icon;
+    private _timerId: number;
+    private _localCallStart: number | null;
+    private _callKey: string | null;
+    private _mutedGuess: boolean;
+    private _sharingGuess: boolean;
+    private _capturingGuess: boolean;
+    private _guestMode: string | null;
+    private _contactItems: Map<string, ContactItem>;
+    private _roomItems: Map<string, RoomItem>;
+    private _participantItems: Map<string, ParticipantItem>;
+    private _liveCallItems: Map<string, LiveCallItem>;
+    private _liveCalls: OngoingCall[];
+    private _machines: Machine[] = [];
+
+    // Built by _buildPanelButton() / _buildMenu() from the constructor.
+    private _icon!: St.Icon;
+    private _badge!: St.Widget;
+    private _micIcon!: St.Icon;
+    private _timerLabel!: St.Label;
+    private _header!: HeaderItem;
+    private _startItem!: LabelItem;
+    private _loginItem!: LabelItem;
+    private _updateItem!: LabelItem;
+    private _settingsItem!: LabelItem;
+    private _stopItem!: LabelItem;
+    private _logoutItem!: LabelItem;
+    private _incomingSection!: PopupMenu.PopupMenuSection;
+    private _incomingHeader!: HeaderItem;
+    private _callSection!: PopupMenu.PopupMenuSection;
+    private _idleSection!: PopupMenu.PopupMenuSection;
+    private _listsSeparator!: PopupMenu.PopupSeparatorMenuItem;
+    private _callHeader!: HeaderItem;
+    private _muteSwitch!: PopupMenu.PopupSwitchMenuItem;
+    private _shareSwitch!: PopupMenu.PopupSwitchMenuItem;
+    private _controlSwitch!: PopupMenu.PopupSwitchMenuItem;
+    private _captureSwitch!: PopupMenu.PopupSwitchMenuItem;
+    private _participantsSub!: PopupMenu.PopupSubMenuMenuItem;
+    private _moreSub!: PopupMenu.PopupSubMenuMenuItem;
+    private _snapshotItem!: LabelItem;
+    private _leaveItem!: LabelItem;
+    private _liveCallsSub!: PopupMenu.PopupSubMenuMenuItem;
+    private _liveCallsList!: PopupMenu.PopupMenuSection;
+    private _liveCallsEmpty!: PopupMenu.PopupMenuItem;
+    private _contactsSub!: PopupMenu.PopupSubMenuMenuItem;
+    private _contactsList!: PopupMenu.PopupMenuSection;
+    private _contactsEmpty!: PopupMenu.PopupMenuItem;
+    private _roomsSub!: PopupMenu.PopupSubMenuMenuItem;
+    private _roomsList!: PopupMenu.PopupMenuSection;
+    private _historySub!: PopupMenu.PopupSubMenuMenuItem;
+    private _historyList!: PopupMenu.PopupMenuSection;
+    private _machinesSub!: PopupMenu.PopupSubMenuMenuItem;
+
+    constructor({store, actions, settings, gicon}: {
+        store: TupleStore, actions: Actions, settings: Gio.Settings, gicon: Gio.Icon,
+    }) {
+        super(0.5, 'Tuple', false);
         this._store = store;
         this._actions = actions;
         this._settings = settings;
@@ -48,21 +121,21 @@ class TupleIndicator extends PanelMenu.Button {
 
         store.connectObject('changed', () => this._sync(), this);
         settings.connectObject('changed::show-call-timer', () => this._sync(), this);
-        this.menu.connectObject('open-state-changed', (_m, open) => {
+        this.menu.connectObject('open-state-changed', (_m: unknown, open: boolean) => {
             if (open)
                 this._onMenuOpened();
         }, this);
         this._sync();
     }
 
-    destroy() {
+    override destroy() {
         this._stopTimer();
         super.destroy();
     }
 
     // -- panel button ----------------------------------------------------------
 
-    _buildPanelButton() {
+    private _buildPanelButton() {
         const box = new St.BoxLayout({style_class: 'panel-status-menu-box'});
         // Tuple's icon is full colour, so status can't tint it; a small dot
         // in its corner shows ringing / in a call instead.
@@ -100,7 +173,7 @@ class TupleIndicator extends PanelMenu.Button {
 
     // -- menu ----------------------------------------------------------------------
 
-    _item(label, callback, iconName = null) {
+    private _item(label: string, callback: () => void, iconName: string | null = null): LabelItem {
         const item = iconName
             ? new PopupMenu.PopupImageMenuItem(label, iconName)
             : new PopupMenu.PopupMenuItem(label);
@@ -108,7 +181,7 @@ class TupleIndicator extends PanelMenu.Button {
         return item;
     }
 
-    _buildMenu() {
+    private _buildMenu() {
         const menu = this.menu;
         menu.box.add_style_class_name('tuple-deck-menu');
 
@@ -159,7 +232,7 @@ class TupleIndicator extends PanelMenu.Button {
         menu.addMenuItem(this._logoutItem);
     }
 
-    _buildCallSection(section) {
+    private _buildCallSection(section: PopupMenu.PopupMenuSection) {
         this._callHeader = new HeaderItem();
         section.addMenuItem(this._callHeader);
 
@@ -196,13 +269,13 @@ class TupleIndicator extends PanelMenu.Button {
         section.addMenuItem(this._controlSwitch);
 
         this._participantsSub = new PopupMenu.PopupSubMenuMenuItem('Participants', true);
-        this._participantsSub.icon.icon_name = 'system-users-symbolic';
+        this._participantsSub.icon!.icon_name = 'system-users-symbolic';
         section.addMenuItem(this._participantsSub);
 
         // Less frequent call actions live in one submenu to keep the menu
         // short enough for a laptop screen.
         this._moreSub = new PopupMenu.PopupSubMenuMenuItem('Reactions & more', true);
-        this._moreSub.icon.icon_name = 'face-smile-big-symbolic';
+        this._moreSub.icon!.icon_name = 'face-smile-big-symbolic';
         for (const sound of REACTIONS)
             this._moreSub.menu.addMenuItem(this._item(REACTION_LABELS[sound] ?? sound, () => this._actions.react(sound)));
         this._moreSub.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -226,9 +299,9 @@ class TupleIndicator extends PanelMenu.Button {
         section.addMenuItem(this._leaveItem);
     }
 
-    _buildLiveCalls() {
+    private _buildLiveCalls() {
         this._liveCallsSub = new PopupMenu.PopupSubMenuMenuItem('Live calls', true);
-        this._liveCallsSub.icon.icon_name = 'call-start-symbolic';
+        this._liveCallsSub.icon!.icon_name = 'call-start-symbolic';
         this._liveCallsList = new PopupMenu.PopupMenuSection();
         this._liveCallsSub.menu.addMenuItem(this._liveCallsList);
         this._liveCallsEmpty = new PopupMenu.PopupMenuItem('No live calls', {reactive: false});
@@ -236,9 +309,9 @@ class TupleIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._liveCallsSub);
     }
 
-    _buildContacts() {
+    private _buildContacts() {
         this._contactsSub = new PopupMenu.PopupSubMenuMenuItem('Contacts', true);
-        this._contactsSub.icon.icon_name = 'avatar-default-symbolic';
+        this._contactsSub.icon!.icon_name = 'avatar-default-symbolic';
         this._contactsList = new PopupMenu.PopupMenuSection();
         this._contactsSub.menu.addMenuItem(this._contactsList);
         this._contactsEmpty = new PopupMenu.PopupMenuItem('No contacts yet', {reactive: false});
@@ -249,9 +322,9 @@ class TupleIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._contactsSub);
     }
 
-    _buildRooms() {
+    private _buildRooms() {
         this._roomsSub = new PopupMenu.PopupSubMenuMenuItem('Rooms', true);
-        this._roomsSub.icon.icon_name = 'user-home-symbolic';
+        this._roomsSub.icon!.icon_name = 'user-home-symbolic';
         this._roomsList = new PopupMenu.PopupMenuSection();
         this._roomsSub.menu.addMenuItem(this._roomsList);
         this._roomsSub.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -259,30 +332,30 @@ class TupleIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._roomsSub);
     }
 
-    _buildHistory() {
+    private _buildHistory() {
         this._historySub = new PopupMenu.PopupSubMenuMenuItem('Recent calls', true);
-        this._historySub.icon.icon_name = 'document-open-recent-symbolic';
+        this._historySub.icon!.icon_name = 'document-open-recent-symbolic';
         this._historyList = new PopupMenu.PopupMenuSection();
         this._historySub.menu.addMenuItem(this._historyList);
         this._historySub.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._historySub.menu.addMenuItem(this._item('Search calls…', () => this._actions.openSearch(), 'edit-find-symbolic'));
-        this._historySub.menu.connectObject('open-state-changed', (_m, open) => {
+        this._historySub.menu.connectObject('open-state-changed', (_m: unknown, open: boolean) => {
             if (open)
                 this._loadHistory();
         }, this);
         this.menu.addMenuItem(this._historySub);
     }
 
-    _buildMachines() {
+    private _buildMachines() {
         this._machinesSub = new PopupMenu.PopupSubMenuMenuItem('My other machines', true);
-        this._machinesSub.icon.icon_name = 'computer-symbolic';
+        this._machinesSub.icon!.icon_name = 'computer-symbolic';
         this._machinesSub.visible = false;
         this.menu.addMenuItem(this._machinesSub);
     }
 
     // -- lazy loads (on menu / submenu open) ------------------------------------------
 
-    async _onMenuOpened() {
+    private async _onMenuOpened() {
         const status = this._store.status;
         if (status === Status.DOWN || status === Status.SIGNED_OUT)
             return;
@@ -301,7 +374,7 @@ class TupleIndicator extends PanelMenu.Button {
         this._sync();
     }
 
-    async _loadHistory() {
+    private async _loadHistory() {
         this._historyList.removeAll();
         this._historyList.addMenuItem(new PopupMenu.PopupMenuItem('Loading…', {reactive: false}));
         const {calls, error} = await this._actions.recentCalls();
@@ -326,7 +399,7 @@ class TupleIndicator extends PanelMenu.Button {
 
     // -- sync --------------------------------------------------------------------------
 
-    _sync() {
+    private _sync() {
         const store = this._store;
         const status = store.status;
         const state = store.state;
@@ -386,7 +459,7 @@ class TupleIndicator extends PanelMenu.Button {
         this._syncTimer(inCall);
     }
 
-    _syncHeader(status, state) {
+    private _syncHeader(status: Status, state: TupleState | null) {
         const user = {...state?.user, ...this._store.identity};
         const name = user.full_name || user.short_name || user.email || 'Tuple';
         const version = state?.app_version ?? '';
@@ -420,7 +493,7 @@ class TupleIndicator extends PanelMenu.Button {
         }
     }
 
-    _syncCall(status, call, selfId) {
+    private _syncCall(status: Status, call: Call | null, selfId: Id | null) {
         const outgoing = status === Status.OUTGOING;
         const participants = participantsOf(call, selfId);
         const others = participants.filter(p => !p.isSelf);
@@ -463,7 +536,7 @@ class TupleIndicator extends PanelMenu.Button {
         });
     }
 
-    _callSubtitle(call) {
+    private _callSubtitle(call: Call | null): string {
         const parts = [];
         const started = this._callStart(call);
         if (started)
@@ -473,11 +546,11 @@ class TupleIndicator extends PanelMenu.Button {
         return parts.join(' · ');
     }
 
-    _callStart(call) {
+    private _callStart(call: Call | null): number | null {
         return callStartedAt(call) ?? this._localCallStart;
     }
 
-    _syncContacts(inCall) {
+    private _syncContacts(inCall: boolean) {
         const inCallIds = new Set(participantsOf(this._store.call, this._store.selfId).map(p => String(p.id)));
         const contacts = sortContacts(this._store.contacts)
             .filter(c => !inCall || !inCallIds.has(String(c.id)));
@@ -496,7 +569,7 @@ class TupleIndicator extends PanelMenu.Button {
         });
     }
 
-    _syncLiveCalls(calls) {
+    private _syncLiveCalls(calls: OngoingCall[]) {
         this._liveCallsSub.label.text = `Live calls${calls.length ? ` · ${calls.length}` : ''}`;
         this._liveCallsEmpty.visible = calls.length === 0;
         syncItems(this._liveCallsList, this._liveCallItems, calls, {
@@ -506,12 +579,12 @@ class TupleIndicator extends PanelMenu.Button {
         });
     }
 
-    _inCallNow() {
+    private _inCallNow() {
         const s = this._store.status;
         return s === Status.IN_CALL || s === Status.OUTGOING;
     }
 
-    _syncRooms() {
+    private _syncRooms() {
         const rooms = sortRooms(this._store.rooms);
         const occupied = rooms.filter(r => r.active_call).length;
         this._roomsSub.label.text = `Rooms${occupied ? ` · ${occupied} active` : ''}`;
@@ -537,7 +610,7 @@ class TupleIndicator extends PanelMenu.Button {
         return this._muteSwitch.state;
     }
 
-    _syncPanel() {
+    private _syncPanel() {
         const status = this._store.status;
         const call = this._store.call;
         const inCall = status === Status.IN_CALL;
@@ -556,7 +629,7 @@ class TupleIndicator extends PanelMenu.Button {
             ? `Tuple: ${callerName(call, this._store.selfId)} is calling` : `Tuple: ${status}`;
     }
 
-    _syncTimer(inCall) {
+    private _syncTimer(inCall: boolean) {
         const show = inCall && this._store.status === Status.IN_CALL && this._settings.get_boolean('show-call-timer');
         this._timerLabel.visible = show;
         if (inCall && !this._timerId) {
@@ -570,7 +643,7 @@ class TupleIndicator extends PanelMenu.Button {
         this._tick();
     }
 
-    _tick() {
+    private _tick() {
         const call = this._store.call;
         const started = this._callStart(call);
         if (started && this._timerLabel.visible)
@@ -584,10 +657,10 @@ class TupleIndicator extends PanelMenu.Button {
         }
     }
 
-    _stopTimer() {
+    private _stopTimer() {
         if (this._timerId) {
             GLib.source_remove(this._timerId);
             this._timerId = 0;
         }
     }
-});
+}

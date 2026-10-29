@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": [
+      "ES2024"
+    ],
+    "strict": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "rootDir": "src",
+    "outDir": "build",
+    "removeComments": false,
+    "newLine": "lf",
+    "useDefineForClassFields": false
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}

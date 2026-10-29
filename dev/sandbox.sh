@@ -38,10 +38,11 @@ mkdir -p "$SB"/{config,data,cache,state,runtime,mock}
 chmod 700 "$SB/runtime"
 rm -rf "$OUT" && mkdir -p "$OUT"
 
-glib-compile-schemas "$REPO/src/schemas"
+(cd "$REPO" && { [[ -d node_modules ]] || npm ci --no-fund --no-audit; } && npm run --silent build)
+glib-compile-schemas "$REPO/build/schemas"
 EXT_DIR="$SB/data/gnome-shell/extensions"
 mkdir -p "$EXT_DIR"
-ln -s "$REPO/src" "$EXT_DIR/$DECK_UUID"
+ln -s "$REPO/build" "$EXT_DIR/$DECK_UUID"
 ln -s "$REPO/dev/test-helper" "$EXT_DIR/$HELPER_UUID"
 
 # The extension shows Tuple's installed app icon; mirror it into the sandbox
@@ -86,7 +87,7 @@ dbus-run-session -- bash -c '
     gsettings set org.gnome.desktop.lockdown disable-lock-screen true
     gsettings set org.gnome.desktop.screensaver lock-enabled false
     gsettings set org.gnome.desktop.session idle-delay 0
-    GSETTINGS_SCHEMA_DIR="$REPO/src/schemas" \
+    GSETTINGS_SCHEMA_DIR="$REPO/build/schemas" \
         gsettings set org.gnome.shell.extensions.tuple-deck tuple-path "$TUPLE_BIN"
 
     gnome-shell --headless --virtual-monitor 1600x900 --no-x11 > "$OUT/shell.log" 2>&1 &

@@ -5,28 +5,46 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import St from 'gi://St';
 
-import {EXIT_CALL_UNANSWERED, findProgram} from './cli.js';
+import {EXIT_CALL_UNANSWERED, type RunResult, type TupleCli, findProgram} from './cli.js';
 import {confirm, openSearchDialog, promptLoginCode, promptText} from './dialogs.js';
 import {
+    type CallMember, type CaptureCall, type Contact, type Id, type Machine, type OngoingCall,
+    type Reaction, type Room, type TupleSetting,
     Status, captureCalls, contactRef, firstUrl, machinesOf, ongoingCallLabel, ongoingCalls,
     parseSettings, personName, personalRoom, roomLabel, searchHits,
 } from './model.js';
-import {Urgency} from './notify.js';
+import {type Notifier, Urgency} from './notify.js';
+import type {TupleStore} from './store.js';
 
 const CAPTURE_UNAVAILABLE_HINT =
     "Tuple's call capture store isn't available on this machine — usually " +
     'because no transcription model is set up yet.';
 
-function friendlyError(error) {
+function friendlyError(error: string): string {
     return /transcription store unavailable/i.test(error) ? CAPTURE_UNAVAILABLE_HINT : error;
 }
 
-function timestamp() {
-    return GLib.DateTime.new_now_local().format('%Y%m%d-%H%M%S');
+function timestamp(): string {
+    return GLib.DateTime.new_now_local().format('%Y%m%d-%H%M%S') ?? '';
 }
 
 export class Actions {
-    constructor({cli, store, notifier, settings, openPreferences, bundledUpdater}) {
+    openPreferences: () => void;
+    private _cli: TupleCli;
+    private _store: TupleStore;
+    private _notifier: Notifier;
+    private _settings: Gio.Settings;
+    private _bundledUpdater: string;
+
+    constructor({cli, store, notifier, settings, openPreferences, bundledUpdater}: {
+        cli: TupleCli,
+        store: TupleStore,
+        notifier: Notifier,
+        settings: Gio.Settings,
+        openPreferences: () => void,
+        /** path of the update-tuple script shipped in the extension */
+        bundledUpdater: string,
+    }) {
         this._cli = cli;
         this._store = store;
         this._notifier = notifier;
@@ -35,7 +53,10 @@ export class Actions {
         this._bundledUpdater = bundledUpdater;
     }
 
-    async _do(args, {label, json = true, timeout = 30, success = null} = {}) {
+    /** Runs `tuple <args>`; failures become a "<label> failed" notification. */
+    private async _do(args: string[], {label, json = true, timeout = 30, success = null}: {
+        label?: string, json?: boolean, timeout?: number, success?: string | null,
+    } = {}): Promise<RunResult> {
         const result = await this._cli.run(args, {json, timeout});
         if (!result.ok)
             this._notifier.error(label ? `${label} failed` : 'Tuple', friendlyError(result.error));
@@ -44,27 +65,27 @@ export class Actions {
         return result;
     }
 
-    get _inCall() {
+    private get _inCall(): boolean {
         const s = this._store.status;
         return s === Status.IN_CALL || s === Status.OUTGOING;
     }
 
     // -- helpers -------------------------------------------------------------
 
-    openUri(uri) {
+    openUri(uri: string) {
         try {
             Gio.AppInfo.launch_default_for_uri(uri, global.create_app_launch_context(0, -1));
         } catch (e) {
-            this._notifier.error("Couldn't open link", e.message);
+            this._notifier.error("Couldn't open link", (e as Error).message);
         }
     }
 
-    copyText(text, what = 'Link') {
+    copyText(text: string, what = 'Link') {
         St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
         this._notifier.notify({title: `${what} copied`, body: text, urgency: Urgency.LOW});
     }
 
-    _clipboardText() {
+    private _clipboardText(): Promise<string> {
         return new Promise(resolve => {
             St.Clipboard.get_default().get_text(St.ClipboardType.CLIPBOARD, (_c, text) => resolve(text ?? ''));
         });
@@ -131,7 +152,7 @@ export class Actions {
     // -- calls -------------------------------------------------------------------
 
     /** Rings someone; `tuple call start` waits until they pick up or the call ends. */
-    async callContact(contact) {
+    async callContact(contact: Contact): Promise<void> {
         const name = personName(contact);
         const result = await this._cli.run(['call', 'start', contactRef(contact)], {timeout: 180});
         if (result.status === EXIT_CALL_UNANSWERED) {
@@ -145,13 +166,13 @@ export class Actions {
         }
     }
 
-    async callMachine(machine) {
+    async callMachine(machine: Machine): Promise<void> {
         const result = await this._cli.run(['call', 'start', machine.id], {timeout: 180});
         if (!result.ok && result.status !== EXIT_CALL_UNANSWERED)
             this._notifier.error(`Couldn't call ${machine.name}`, result.error);
     }
 
-    accept(callId) {
+    accept(callId?: Id | null): Promise<RunResult> {
         const args = ['call', 'accept'];
         if (callId)
             args.push('--call', String(callId));
@@ -159,12 +180,12 @@ export class Actions {
     }
 
     /** Calls in progress that you could join (`call list --joinable`). */
-    async ongoingCalls() {
+    async ongoingCalls(): Promise<OngoingCall[]> {
         const result = await this._cli.run(['call', 'list', '--joinable', '--limit', '20'], {timeout: 10});
         return result.ok ? ongoingCalls(result.data) : [];
     }
 
-    async joinCall(call) {
+    async joinCall(call: OngoingCall): Promise<void> {
         const name = ongoingCallLabel(call);
         const args = ['call', 'join', call.target];
         if (this._inCall) {
@@ -175,7 +196,7 @@ export class Actions {
         await this._do(args, {label: `Joining ${name}`});
     }
 
-    _confirmSwitch(name) {
+    private _confirmSwitch(name: string): Promise<boolean> {
         return confirm({
             title: `Switch to ${name}?`,
             description: 'You will leave your current call.',
@@ -187,21 +208,21 @@ export class Actions {
         await this._do(['call', 'leave'], {label: 'Leaving the call'});
     }
 
-    setMuted(muted) {
+    setMuted(muted: boolean): Promise<RunResult> {
         return this._do(['call', muted ? 'mute' : 'unmute'], {label: muted ? 'Muting' : 'Unmuting'});
     }
 
-    react(sound) {
+    react(sound: Reaction): Promise<RunResult> {
         return this._do(['call', 'react', sound], {label: 'Reaction'});
     }
 
-    addParticipant(contact) {
+    addParticipant(contact: Contact): Promise<RunResult> {
         return this._do(['call', 'participants', 'add', contactRef(contact)], {
             label: `Adding ${personName(contact)}`,
         });
     }
 
-    async removeParticipant(participant) {
+    async removeParticipant(participant: CallMember): Promise<RunResult | null> {
         if (!await confirm({
             title: `Remove ${participant.name}?`,
             description: 'They will be dropped from the call.',
@@ -216,7 +237,7 @@ export class Actions {
 
     // Screen sharing and settings only exist as deprecated commands so far, and
     // those reject --format json.
-    setSharing(on) {
+    setSharing(on: boolean): Promise<RunResult> {
         return this._do([on ? 'share' : 'unshare'], {
             label: on ? 'Sharing your screen' : 'Stopping screen share',
             json: false,
@@ -224,12 +245,12 @@ export class Actions {
         });
     }
 
-    async getSettings() {
+    async getSettings(): Promise<TupleSetting[]> {
         const result = await this._cli.run(['settings'], {json: false, timeout: 10});
         return result.ok ? parseSettings(result.stdout) : [];
     }
 
-    setSetting(name, value) {
+    setSetting(name: string, value: string | number): Promise<RunResult> {
         return this._do(['set', name, String(value)], {label: `Changing ${name}`, json: false});
     }
 
@@ -255,7 +276,7 @@ export class Actions {
         }
     }
 
-    setCapturing(on) {
+    setCapturing(on: boolean): Promise<RunResult> {
         return this._do(['capture', on ? 'start' : 'stop'], {
             label: on ? 'Starting capture' : 'Stopping capture',
             success: on ? 'Capturing this call' : 'Stopped capturing',
@@ -264,7 +285,7 @@ export class Actions {
 
     // -- rooms -------------------------------------------------------------------
 
-    async joinRoom(room) {
+    async joinRoom(room: Room): Promise<void> {
         const args = ['rooms', 'join', room.http_value || room.slug];
         if (this._inCall) {
             if (!await this._confirmSwitch(roomLabel(room)))
@@ -314,13 +335,13 @@ export class Actions {
         }
     }
 
-    toggleRoomFavorite(room) {
+    toggleRoomFavorite(room: Room): Promise<RunResult> {
         return this._do(['rooms', room.favorited ? 'unfavorite' : 'favorite', room.http_value || room.slug], {
             label: 'Updating favorites',
         });
     }
 
-    toggleContactFavorite(contact) {
+    toggleContactFavorite(contact: Contact): Promise<RunResult> {
         return this._do(['contacts', contact.favorited ? 'unfavorite' : 'favorite', contactRef(contact)], {
             label: 'Updating favorites',
         });
@@ -342,7 +363,7 @@ export class Actions {
         await this._do(['contacts', 'invite', email], {label: 'Inviting', success: `Invited ${email}`});
     }
 
-    async removeContact(contact) {
+    async removeContact(contact: Contact): Promise<void> {
         const name = personName(contact);
         if (!await confirm({
             title: `Remove ${name} from your contacts?`,
@@ -356,21 +377,21 @@ export class Actions {
 
     // -- machines ----------------------------------------------------------------
 
-    async machines() {
+    async machines(): Promise<Machine[]> {
         const result = await this._cli.run(['machines', 'list'], {timeout: 10});
         return result.ok ? machinesOf(result.data) : [];
     }
 
     // -- history (tuple capture) -------------------------------------------------
 
-    async recentCalls(limit = 8) {
+    async recentCalls(limit = 8): Promise<{calls: CaptureCall[], error: string}> {
         const result = await this._cli.run(['capture', 'list', '--limit', String(limit)], {timeout: 15});
         return result.ok ? {calls: captureCalls(result.data), error: ''}
             : {calls: [], error: friendlyError(result.error)};
     }
 
     /** Exports one stored call as Markdown into the cache dir and opens it. */
-    async openCall(callId) {
+    async openCall(callId: string): Promise<void> {
         const dir = GLib.build_filenamev([GLib.get_user_cache_dir(), 'tuple-deck', 'calls']);
         GLib.mkdir_with_parents(dir, 0o700);
         const dest = GLib.build_filenamev([dir, `${callId}.md`]);
@@ -383,7 +404,7 @@ export class Actions {
     }
 
     /** Deletes one stored call capture; resolves true when it was deleted. */
-    async deleteCapture(call) {
+    async deleteCapture(call: CaptureCall): Promise<boolean> {
         if (!await confirm({
             title: `Delete "${call.title}"?`,
             description: "Its transcript, screen content and media are deleted from this machine. This can't be undone.",
@@ -415,20 +436,21 @@ export class Actions {
     async update() {
         let program = '/bin/bash';
         // Run through bash: packing/installing the zip may drop the exec bit.
-        let argv = [program, this._bundledUpdater];
+        let argv: string[] = [program, this._bundledUpdater];
         const custom = this._settings.get_string('update-command').trim();
         if (custom) {
             try {
-                [, argv] = GLib.shell_parse_argv(custom);
+                argv = GLib.shell_parse_argv(custom)[1] ?? [];
             } catch (e) {
-                this._notifier.error('Update command is invalid', e.message);
+                this._notifier.error('Update command is invalid', (e as Error).message);
                 return;
             }
-            program = findProgram(argv[0]);
-            if (!program) {
+            const found = findProgram(argv[0]);
+            if (!found) {
                 this._notifier.error('Updater not found', `Couldn't find "${argv[0]}". Fix the update command in the extension settings, or clear it to use the bundled one.`);
                 return;
             }
+            program = found;
         }
         this._notifier.notify({title: 'Updating Tuple…', urgency: Urgency.LOW});
         let ok = false;
@@ -440,10 +462,10 @@ export class Actions {
             ok = proc.get_successful();
             output = (stdout ?? '').trim();
         } catch (e) {
-            output = e.message;
+            output = (e as Error).message;
         }
         // curl's progress bar shares the line with \r redraws; keep the final frame.
-        const lines = output.split('\n').map(l => l.split('\r').at(-1).trim()).filter(Boolean);
+        const lines = output.split('\n').map(l => (l.split('\r').at(-1) ?? '').trim()).filter(Boolean);
         if (!ok) {
             this._notifier.error('Tuple update failed', lines.at(-1) ?? '');
             return;

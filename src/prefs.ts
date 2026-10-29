@@ -7,10 +7,10 @@ import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import {TupleCli, findProgram} from './lib/cli.js';
-import {SHORTCUTS, parseSettings} from './lib/model.js';
+import {type Shortcut, SHORTCUTS, parseSettings} from './lib/model.js';
 
 // Friendlier labels for Tuple's own settings; unknown ones fall back to the CLI's text.
-const TUPLE_SETTING_LABELS = {
+const TUPLE_SETTING_LABELS: Record<string, [string, string]> = {
     'overlay': ['Annotation overlay', 'Show the annotation window while sharing your screen'],
     'start-calls-muted': ['Start calls muted', 'Join every call with the microphone off'],
     'capture': ['Screen capture method', 'Use “portal” on Wayland'],
@@ -22,9 +22,9 @@ const TUPLE_SETTING_LABELS = {
  * Asks for a key combination. Resolves with its accelerator string, '' when
  * the user pressed Backspace to remove the shortcut, or null when cancelled.
  */
-function captureShortcut(parent, title) {
+function captureShortcut(parent: Gtk.Widget, title: string): Promise<string | null> {
     return new Promise(resolve => {
-        let result = null;
+        let result: string | null = null;
         const dialog = new Adw.Dialog({title, content_width: 380});
         const view = new Adw.ToolbarView({content: new Adw.StatusPage({
             icon_name: 'preferences-desktop-keyboard-shortcuts-symbolic',
@@ -62,7 +62,7 @@ function captureShortcut(parent, title) {
     });
 }
 
-function shortcutRow(settings, {key, title, subtitle}) {
+function shortcutRow(settings: Gio.Settings, {key, title, subtitle}: Shortcut): Adw.ActionRow {
     const row = new Adw.ActionRow({title, subtitle, activatable: true});
     const label = new Adw.ShortcutLabel({valign: Gtk.Align.CENTER, disabled_text: 'Disabled'});
     const clear = new Gtk.Button({
@@ -90,7 +90,7 @@ function shortcutRow(settings, {key, title, subtitle}) {
 }
 
 export default class TupleDeckPreferences extends ExtensionPreferences {
-    async fillPreferencesWindow(window) {
+    override async fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
         const settings = this.getSettings();
         const cli = new TupleCli(() => settings.get_string('tuple-path'));
         window.set_default_size(640, 720);
@@ -104,7 +104,7 @@ export default class TupleDeckPreferences extends ExtensionPreferences {
         await this._fillTuplePage(tuplePage, cli);
     }
 
-    async _fillTuplePage(page, cli) {
+    private async _fillTuplePage(page: Adw.PreferencesPage, cli: TupleCli) {
         const group = new Adw.PreferencesGroup({
             title: 'Tuple settings',
             description: 'Stored by the Tuple app itself (tuple settings / tuple set).',
@@ -120,7 +120,7 @@ export default class TupleDeckPreferences extends ExtensionPreferences {
             }));
         }
 
-        const apply = async (name, value, row) => {
+        const apply = async (name: string, value: string | number, row: Adw.PreferencesRow) => {
             const r = await cli.run(['set', name, String(value)], {json: false, timeout: 10});
             row.remove_css_class('error');
             if (!r.ok) {
@@ -135,14 +135,15 @@ export default class TupleDeckPreferences extends ExtensionPreferences {
                 const row = new Adw.SwitchRow({title, subtitle, active: item.value === '1'});
                 row.connect('notify::active', () => apply(item.name, row.active ? 1 : 0, row));
                 group.add(row);
-            } else if (item.kind === 'choice') {
+            } else if (item.kind === 'choice' && item.options) {
+                const options = item.options;
                 const row = new Adw.ComboRow({
                     title,
                     subtitle,
-                    model: Gtk.StringList.new(item.options),
-                    selected: Math.max(0, item.options.indexOf(item.value)),
+                    model: Gtk.StringList.new(options),
+                    selected: Math.max(0, options.indexOf(item.value)),
                 });
-                row.connect('notify::selected', () => apply(item.name, item.options[row.selected], row));
+                row.connect('notify::selected', () => apply(item.name, options[row.selected], row));
                 group.add(row);
             } else {
                 const row = new Adw.EntryRow({title, text: item.value, show_apply_button: true});
@@ -165,7 +166,7 @@ export default class TupleDeckPreferences extends ExtensionPreferences {
         }));
     }
 
-    _fillExtensionPage(page, settings, cli) {
+    private _fillExtensionPage(page: Adw.PreferencesPage, settings: Gio.Settings, cli: TupleCli) {
         const general = new Adw.PreferencesGroup({title: 'Behaviour'});
         page.add(general);
         for (const [key, title, subtitle] of [
@@ -220,7 +221,7 @@ export default class TupleDeckPreferences extends ExtensionPreferences {
             let ok = !text;
             try {
                 const [, argv] = GLib.shell_parse_argv(text);
-                ok = !!findProgram(argv[0]);
+                ok = !!argv?.[0] && !!findProgram(argv[0]);
             } catch {}
             updateRow.remove_css_class('error');
             if (!ok)

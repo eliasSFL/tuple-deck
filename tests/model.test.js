@@ -1,12 +1,12 @@
-// Run: gjs -m tests/model.test.js
+// Run: npm test (builds, then runs this against the compiled build/lib)
 import System from 'system';
 
 import {
     Status, callPhase, callTitle, callerName, captureCalls, deriveStatus, firstUrl,
     formatDuration, joinNames, notificationCards, ongoingCallLabel, ongoingCalls, parseSettings,
     participantsOf, roomLabel, searchHits, selfMuted, sortContacts,
-} from '../src/lib/model.js';
-import {cleanError} from '../src/lib/cli.js';
+} from '../build/lib/model.js';
+import {cleanError} from '../build/lib/cli.js';
 
 let failures = 0;
 let passes = 0;

@@ -59,8 +59,12 @@ command and a debug log.
 ## Install
 
 ```sh
-./install.sh          # packs dist/*.zip, installs and enables for your user
+./install.sh          # compiles, packs dist/*.zip, installs and enables for your user
 ```
+
+The extension is written in TypeScript, so installing from a clone needs Node.js
+(for `tsc`); `install.sh` runs `npm ci` the first time. The zip attached to each
+GitHub release is already compiled and only needs `gnome-extensions install`.
 
 GNOME on Wayland only discovers a newly installed extension at login. Log out and
 back in (then `gnome-extensions enable tuple-deck@eliassfl.github.io` if
@@ -122,18 +126,20 @@ Known gaps:
 ## Development
 
 ```
-src/                    the extension (what gets packed)
-  extension.js          wiring: store → indicator, notifications
-  prefs.js              Adw preferences window
-  lib/cli.js            TupleCli (one-shot commands) + Follower (JSON line streams)
-  lib/store.js          live state from the three follow streams; incoming/presence events
-  lib/model.js          pure helpers: status derivation, normalizers (unit tested)
-  lib/actions.js        every menu action as a CLI call, errors → notifications
-  lib/indicator.js      the panel button and menu
-  lib/menuItems.js      contact / room / participant rows
-  lib/dialogs.js        prompt, confirm, login and search dialogs
+src/                    the extension, in TypeScript
+  extension.ts          wiring: store → indicator, notifications, shortcuts
+  prefs.ts              Adw preferences window
+  lib/cli.ts            TupleCli (one-shot commands) + Follower (JSON line streams)
+  lib/store.ts          live state from the follow streams; incoming/presence/card events
+  lib/model.ts          Tuple's JSON types + pure helpers: status, normalizers (unit tested)
+  lib/actions.ts        every menu action as a CLI call, errors → notifications
+  lib/indicator.ts      the panel button and menu
+  lib/menuItems.ts      contact / room / participant / live call / history rows
+  lib/dialogs.ts        prompt, confirm, login and search dialogs
+  ambient.d.ts          types for gi:// and resource:/// imports (@girs packages)
   bin/update-tuple      bundled updater for the tuple CLI (bash)
-tests/model.test.js     gjs -m tests/model.test.js
+build/                  compiled JS + metadata, schemas, css, bin (what gets packed; not committed)
+tests/model.test.js     unit tests, run against build/
 dev/sandbox.sh          headless GNOME Shell test run (see below)
 dev/mock-tuple          fake tuple CLI serving dev/fixtures/<scenario>/
 dev/readonly-tuple      passes only read-only commands to the real CLI
@@ -142,10 +148,21 @@ dev/plans/*.json        test plans
 ```
 
 ```sh
-gjs -m tests/model.test.js                     # unit tests
-dev/sandbox.sh                                 # full UI tour against mock-tuple → dev/out/*.png
+npm ci                                         # once: typescript + @girs type packages
+npm run check                                  # type-check only
+npm run build                                  # src/ → build/
+npm test                                       # build, then unit tests
+dev/sandbox.sh                                 # build, then full UI tour against mock-tuple → dev/out/*.png
 TUPLE_DECK_REAL=1 dev/sandbox.sh dev/plans/real-readonly.json   # against your real Tuple, read-only
 ```
+
+`tsc` emits plain ES modules that keep the source's layout and comments, so
+what ships stays readable. Types come from `@girs/gnome-shell` 50, the newest
+published; nothing the extension uses changed in GNOME 51. GObject subclasses
+register in a `static {}` block so they keep their TypeScript types, and
+`useDefineForClassFields` is off so a field declaration emits nothing (with
+define semantics it would reset the field after `super()`, wiping anything the
+base class's `_init` had set).
 
 The sandbox runs `gnome-shell --headless` on its own D-Bus session, with every
 XDG directory (dconf, extensions, cache, runtime) in a temp dir. Your real

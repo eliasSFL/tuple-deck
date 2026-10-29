@@ -1,0 +1,17 @@
+{
+  "name": "tuple-deck",
+  "private": true,
+  "type": "module",
+  "description": "GNOME Shell extension for the Tuple Linux client (build tooling only; nothing here is published to npm)",
+  "license": "MIT",
+  "scripts": {
+    "build": "rm -rf build && tsc -p . && cp -r src/metadata.json src/stylesheet.css src/bin src/schemas build/",
+    "check": "tsc -p . --noEmit",
+    "test": "npm run build && gjs -m tests/model.test.js"
+  },
+  "devDependencies": {
+    "@girs/gjs": "^4.1.0",
+    "@girs/gnome-shell": "50.0.4",
+    "typescript": "^7.0.2"
+  }
+}

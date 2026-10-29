@@ -1,10 +1,12 @@
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
 
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 import {
+    type CallMember, type CaptureCall, type Contact, type OngoingCall, type Room,
     formatDuration, formatWhen, isOnline, joinNames, ongoingCallLabel, personName, roomLabel,
     roomOccupants,
 } from './model.js';
@@ -14,7 +16,16 @@ import {
  * reusing items by key so an open submenu keeps its scroll position and hover
  * state while presence updates stream in.
  */
-export function syncItems(menu, items, entries, {keyOf, create, update}) {
+export function syncItems<T, I extends PopupMenu.PopupBaseMenuItem>(
+    menu: PopupMenu.PopupMenuBase,
+    items: Map<string, I>,
+    entries: T[],
+    {keyOf, create, update}: {
+        keyOf: (entry: T) => string,
+        create: (entry: T) => I,
+        update: (item: I, entry: T) => void,
+    },
+): void {
     const keep = new Set(entries.map(keyOf));
     for (const [key, item] of items) {
         if (!keep.has(key)) {
@@ -36,7 +47,7 @@ export function syncItems(menu, items, entries, {keyOf, create, update}) {
     });
 }
 
-function iconButton(iconName, accessibleName, onClicked) {
+function iconButton(iconName: string, accessibleName: string, onClicked: () => void): St.Button {
     const button = new St.Button({
         style_class: 'tuple-deck-icon-button',
         can_focus: true,
@@ -48,7 +59,11 @@ function iconButton(iconName, accessibleName, onClicked) {
     return button;
 }
 
-function twoLineLabel() {
+function setButtonIcon(button: St.Button, iconName: string) {
+    (button.child as St.Icon).icon_name = iconName;
+}
+
+function twoLineLabel(): {box: St.BoxLayout, title: St.Label, subtitle: St.Label} {
     const box = new St.BoxLayout({
         orientation: Clutter.Orientation.VERTICAL,
         x_expand: true,
@@ -61,27 +76,36 @@ function twoLineLabel() {
     return {box, title, subtitle};
 }
 
-function setSubtitle(label, text) {
+function setSubtitle(label: St.Label, text: string | null | undefined) {
     label.text = text ?? '';
     label.visible = !!text;
 }
 
+type Presence = 'online' | 'busy' | 'offline';
+
 /** A presence dot: green online, amber busy, grey offline. */
-function presenceDot() {
+function presenceDot(): St.Widget {
     return new St.Widget({style_class: 'tuple-deck-dot', y_align: Clutter.ActorAlign.CENTER});
 }
 
-function setPresence(dot, status) {
+function setPresence(dot: St.Widget, status: Presence) {
     for (const s of ['online', 'busy', 'offline'])
         dot.remove_style_class_name(s);
     dot.add_style_class_name(status);
 }
 
 /** Bold, non-interactive line used as a heading inside the menu. */
-export const HeaderItem = GObject.registerClass(
-class HeaderItem extends PopupMenu.PopupBaseMenuItem {
-    _init() {
-        super._init({reactive: false, can_focus: false, style_class: 'tuple-deck-header'});
+export class HeaderItem extends PopupMenu.PopupBaseMenuItem {
+    static {
+        GObject.registerClass(this);
+    }
+
+    private _icon: St.Icon;
+    private _title: St.Label;
+    private _subtitle: St.Label;
+
+    constructor() {
+        super({reactive: false, can_focus: false, style_class: 'tuple-deck-header'});
         // St marks non-reactive actors :insensitive, which the theme greys
         // out; a heading should keep the normal text colour.
         const undim = () => this.remove_style_pseudo_class('insensitive');
@@ -96,7 +120,9 @@ class HeaderItem extends PopupMenu.PopupBaseMenuItem {
         this.label_actor = title;
     }
 
-    update({title, subtitle = '', gicon = null, iconName = null}) {
+    update({title, subtitle = '', gicon = null, iconName = null}: {
+        title: string, subtitle?: string, gicon?: Gio.Icon | null, iconName?: string | null,
+    }) {
         this._title.text = title;
         setSubtitle(this._subtitle, subtitle);
         if (gicon)
@@ -105,16 +131,30 @@ class HeaderItem extends PopupMenu.PopupBaseMenuItem {
             this._icon.icon_name = iconName;
         this._icon.visible = !!(gicon || iconName);
     }
-});
+}
 
 /**
  * A contact: click calls them (or adds them to the current call); star toggles
  * favorite. Contacts from outside your team also get a remove button.
  */
-export const ContactItem = GObject.registerClass(
-class ContactItem extends PopupMenu.PopupBaseMenuItem {
-    _init({onActivate, onToggleFavorite, onRemove}) {
-        super._init({style_class: 'tuple-deck-row'});
+export class ContactItem extends PopupMenu.PopupBaseMenuItem {
+    static {
+        GObject.registerClass(this);
+    }
+
+    contact!: Contact;
+    private _dot: St.Widget;
+    private _name: St.Label;
+    private _detail: St.Label;
+    private _remove: St.Button;
+    private _star: St.Button;
+
+    constructor({onActivate, onToggleFavorite, onRemove}: {
+        onActivate: (contact: Contact) => void,
+        onToggleFavorite: (contact: Contact) => void,
+        onRemove: (contact: Contact) => void,
+    }) {
+        super({style_class: 'tuple-deck-row'});
         this._dot = presenceDot();
         this.add_child(this._dot);
         const {box, title, subtitle} = twoLineLabel();
@@ -129,7 +169,7 @@ class ContactItem extends PopupMenu.PopupBaseMenuItem {
         this.connect('activate', () => onActivate(this.contact));
     }
 
-    update(contact, {inCall}) {
+    update(contact: Contact, {inCall}: {inCall: boolean}) {
         this.contact = contact;
         this._name.text = personName(contact);
         const status = isOnline(contact) ? 'online' : contact.status === 'busy' ? 'busy' : 'offline';
@@ -143,17 +183,30 @@ class ContactItem extends PopupMenu.PopupBaseMenuItem {
             parts.push('Agent');
         setSubtitle(this._detail, parts.join(' · '));
         this._remove.visible = contact.kind !== 'teammate';
-        this._star.child.icon_name = contact.favorited ? 'starred-symbolic' : 'non-starred-symbolic';
+        setButtonIcon(this._star, contact.favorited ? 'starred-symbolic' : 'non-starred-symbolic');
         this._star.accessible_name = contact.favorited ? 'Remove from favorites' : 'Add to favorites';
         this.accessible_name = `${inCall ? 'Add' : 'Call'} ${personName(contact)}`;
     }
-});
+}
 
 /** A room: click joins; copy puts its link on the clipboard; star toggles favorite. */
-export const RoomItem = GObject.registerClass(
-class RoomItem extends PopupMenu.PopupBaseMenuItem {
-    _init({onActivate, onCopy, onToggleFavorite}) {
-        super._init({style_class: 'tuple-deck-row'});
+export class RoomItem extends PopupMenu.PopupBaseMenuItem {
+    static {
+        GObject.registerClass(this);
+    }
+
+    room!: Room;
+    private _dot: St.Widget;
+    private _name: St.Label;
+    private _detail: St.Label;
+    private _star: St.Button;
+
+    constructor({onActivate, onCopy, onToggleFavorite}: {
+        onActivate: (room: Room) => void,
+        onCopy: (room: Room) => void,
+        onToggleFavorite: (room: Room) => void,
+    }) {
+        super({style_class: 'tuple-deck-row'});
         this._dot = presenceDot();
         this.add_child(this._dot);
         const {box, title, subtitle} = twoLineLabel();
@@ -167,7 +220,7 @@ class RoomItem extends PopupMenu.PopupBaseMenuItem {
         this.connect('activate', () => onActivate(this.room));
     }
 
-    update(room) {
+    update(room: Room) {
         this.room = room;
         this._name.text = roomLabel(room);
         const people = roomOccupants(room).map(personName);
@@ -176,15 +229,23 @@ class RoomItem extends PopupMenu.PopupBaseMenuItem {
         if (room.active_call)
             detail = people.length ? `${people.join(', ')} inside` : 'Call in progress';
         setSubtitle(this._detail, detail);
-        this._star.child.icon_name = room.favorited ? 'starred-symbolic' : 'non-starred-symbolic';
+        setButtonIcon(this._star, room.favorited ? 'starred-symbolic' : 'non-starred-symbolic');
     }
-});
+}
 
 /** Someone on the current call; others get a remove button. */
-export const ParticipantItem = GObject.registerClass(
-class ParticipantItem extends PopupMenu.PopupBaseMenuItem {
-    _init({onRemove}) {
-        super._init({activate: false, style_class: 'tuple-deck-row'});
+export class ParticipantItem extends PopupMenu.PopupBaseMenuItem {
+    static {
+        GObject.registerClass(this);
+    }
+
+    participant!: CallMember;
+    private _mic: St.Icon;
+    private _name: St.Label;
+    private _remove: St.Button;
+
+    constructor({onRemove}: {onRemove: (participant: CallMember) => void}) {
+        super({activate: false, style_class: 'tuple-deck-row'});
         this._mic = new St.Icon({style_class: 'popup-menu-icon', y_align: Clutter.ActorAlign.CENTER});
         this.add_child(this._mic);
         this._name = new St.Label({x_expand: true, y_align: Clutter.ActorAlign.CENTER});
@@ -194,7 +255,7 @@ class ParticipantItem extends PopupMenu.PopupBaseMenuItem {
         this.add_child(this._remove);
     }
 
-    update(participant) {
+    update(participant: CallMember) {
         this.participant = participant;
         this._name.text = participant.isSelf ? `${participant.name} (you)` : participant.name;
         this._mic.icon_name = participant.muted
@@ -202,13 +263,20 @@ class ParticipantItem extends PopupMenu.PopupBaseMenuItem {
         this._mic.opacity = participant.muted === null ? 0 : 255;
         this._remove.visible = !participant.isSelf;
     }
-});
+}
 
 /** A call in progress you can join (from `call list`). */
-export const LiveCallItem = GObject.registerClass(
-class LiveCallItem extends PopupMenu.PopupBaseMenuItem {
-    _init({onActivate}) {
-        super._init({style_class: 'tuple-deck-row'});
+export class LiveCallItem extends PopupMenu.PopupBaseMenuItem {
+    static {
+        GObject.registerClass(this);
+    }
+
+    call!: OngoingCall;
+    private _name: St.Label;
+    private _detail: St.Label;
+
+    constructor({onActivate}: {onActivate: (call: OngoingCall) => void}) {
+        super({style_class: 'tuple-deck-row'});
         const dot = presenceDot();
         setPresence(dot, 'online');
         this.add_child(dot);
@@ -220,7 +288,7 @@ class LiveCallItem extends PopupMenu.PopupBaseMenuItem {
         this.connect('activate', () => onActivate(this.call));
     }
 
-    update(call) {
+    update(call: OngoingCall) {
         this.call = call;
         this._name.text = ongoingCallLabel(call);
         const parts = [];
@@ -231,13 +299,22 @@ class LiveCallItem extends PopupMenu.PopupBaseMenuItem {
         setSubtitle(this._detail, parts.join(' · '));
         this.accessible_name = `Join ${ongoingCallLabel(call)}`;
     }
-});
+}
 
 /** A stored call: click opens its Markdown export; the bin deletes it. */
-export const HistoryItem = GObject.registerClass(
-class HistoryItem extends PopupMenu.PopupBaseMenuItem {
-    _init(call, {onActivate, onDelete}) {
-        super._init({style_class: 'tuple-deck-row'});
+export class HistoryItem extends PopupMenu.PopupBaseMenuItem {
+    static {
+        GObject.registerClass(this);
+    }
+
+    call: CaptureCall;
+    private _delete: St.Button;
+
+    constructor(call: CaptureCall, {onActivate, onDelete}: {
+        onActivate: (call: CaptureCall) => void,
+        onDelete: (call: CaptureCall) => void,
+    }) {
+        super({style_class: 'tuple-deck-row'});
         this.call = call;
         const label = new St.Label({
             text: [formatWhen(call.startedAt), call.title].filter(Boolean).join(' · '),
@@ -250,4 +327,4 @@ class HistoryItem extends PopupMenu.PopupBaseMenuItem {
         this.add_child(this._delete);
         this.connect('activate', () => onActivate(this.call));
     }
-});
+}

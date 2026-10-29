@@ -17,11 +17,47 @@ import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import * as Signals from 'resource:///org/gnome/shell/misc/signals.js';
 
-import {Follower} from './cli.js';
-import {Status, callPhase, deriveStatus, isOnline, notificationCards} from './model.js';
+import {Follower, type TupleCli} from './cli.js';
+import {
+    type Call, type Card, type Contact, type Id, type Json, type Person, type Room, type TupleState,
+    Status, callPhase, deriveStatus, isOnline, notificationCards,
+} from './model.js';
 
-export class TupleStore extends Signals.EventEmitter {
-    constructor(cli, settings) {
+type StoreSignals = {
+    'changed': [];
+    'incoming': [Call];
+    'incoming-cleared': [];
+    'favorite-online': [Contact];
+    'card': [Card];
+    'card-closed': [string];
+};
+
+export class TupleStore extends Signals.EventEmitter<StoreSignals> {
+    state: TupleState | null;
+    contacts: Contact[];
+    rooms: Room[];
+    daemonUp: boolean;
+    error: string;
+    commands: Set<string>;
+    /** `tuple whoami`, for the full name `state` leaves out. */
+    identity: Person | null;
+
+    private _cli: TupleCli;
+    private _settings: Gio.Settings;
+    private _identityFor: Id | null;
+    private _incomingId: string | null;
+    private _cards: Map<string, Card>;
+    private _cardsOn: boolean;
+    private _cardsCall: string | null;
+    private _contactsSeen: boolean;
+    private _lastLoggedCall: string | undefined;
+    private _stateFollower: Follower;
+    private _contactsFollower: Follower;
+    private _roomsFollower: Follower;
+    private _followers: Follower[];
+    private _cardsFollower: Follower;
+
+    constructor(cli: TupleCli, settings: Gio.Settings) {
         super();
         this._cli = cli;
         this._settings = settings;
@@ -64,7 +100,7 @@ export class TupleStore extends Signals.EventEmitter {
     destroy() {
         this._followers.forEach(f => f.stop());
         this._cardsFollower.stop();
-        this.disconnectAll?.();
+        this.disconnectAll();
     }
 
     /** Reconnect all streams now, e.g. after starting the daemon or logging in. */
@@ -74,38 +110,38 @@ export class TupleStore extends Signals.EventEmitter {
         this.refreshCommands();
     }
 
-    async refreshCommands() {
+    async refreshCommands(): Promise<void> {
         try {
             this.commands = await this._cli.commands();
         } catch (e) {
-            logError(e, 'tuple-deck: reading tuple --help');
+            logError(e as object, 'tuple-deck: reading tuple --help');
         }
         this._syncCards();
         this.emit('changed');
     }
 
     /** Whether the installed CLI still has a (possibly deprecated) command. */
-    has(command) {
+    has(command: string): boolean {
         return this.commands.has(command);
     }
 
-    get status() {
+    get status(): Status {
         return deriveStatus(this.state, this.daemonUp);
     }
 
-    get call() {
+    get call(): Call | null {
         return this.state?.call ?? null;
     }
 
-    get selfId() {
+    get selfId(): Id | null {
         return this.state?.user?.id ?? null;
     }
 
-    get updateVersion() {
+    get updateVersion(): string | null {
         return this.state?.available_update_version ?? null;
     }
 
-    _onDaemonStatus(up, error) {
+    private _onDaemonStatus(up: boolean, error: string) {
         this.daemonUp = up;
         this.error = error;
         if (!up) {
@@ -116,20 +152,20 @@ export class TupleStore extends Signals.EventEmitter {
         this.emit('changed');
     }
 
-    _onState(data) {
+    private _onState(data: TupleState) {
         this.state = data;
         this.daemonUp = true;
         this.error = '';
         if (this._settings.get_boolean('debug-log'))
             this._logCall(data);
-        this._setIncoming(this.status === Status.INCOMING ? data.call : null);
+        this._setIncoming(this.status === Status.INCOMING ? data.call ?? null : null);
         this._syncIdentity(data.user);
         this._syncCards();
         this.emit('changed');
     }
 
     // `state` only carries the short name; whoami has the full identity.
-    _syncIdentity(user) {
+    private _syncIdentity(user: Person | null | undefined) {
         const id = user?.id ?? null;
         if (id === this._identityFor)
             return;
@@ -139,7 +175,7 @@ export class TupleStore extends Signals.EventEmitter {
             this._loadIdentity(id);
     }
 
-    async _loadIdentity(id) {
+    private async _loadIdentity(id: Id) {
         const result = await this._cli.run(['whoami'], {timeout: 10});
         if (result.ok && id === this._identityFor && String(result.data?.id) === String(id)) {
             this.identity = result.data;
@@ -150,7 +186,7 @@ export class TupleStore extends Signals.EventEmitter {
     // -- notification cards --------------------------------------------------
 
     /** Follows the call's notification cards while in a call, and closes them all after. */
-    _syncCards() {
+    private _syncCards() {
         const want = this.status === Status.IN_CALL && this.has('notifications');
         const callId = want ? String(this.call?.id ?? 'call') : null;
         if (callId === this._cardsCall)
@@ -169,10 +205,10 @@ export class TupleStore extends Signals.EventEmitter {
         }
     }
 
-    _onCards(data) {
+    private _onCards(data: Json) {
         this._debugLog('notifications-log.ndjson', data);
         const {snapshot, cards} = notificationCards(data);
-        const seen = new Set();
+        const seen = new Set<string>();
         for (const card of cards) {
             seen.add(card.id);
             if (card.open && !this._cards.has(card.id)) {
@@ -192,7 +228,7 @@ export class TupleStore extends Signals.EventEmitter {
         }
     }
 
-    _setIncoming(call) {
+    private _setIncoming(call: Call | null) {
         const id = call ? String(call.id ?? 'ringing') : null;
         if (id === this._incomingId)
             return;
@@ -204,7 +240,7 @@ export class TupleStore extends Signals.EventEmitter {
             this.emit('incoming', call);
     }
 
-    _onContacts(data) {
+    private _onContacts(data: Json) {
         if (!Array.isArray(data))
             return;
         if (this._contactsSeen) {
@@ -220,7 +256,7 @@ export class TupleStore extends Signals.EventEmitter {
         this.emit('changed');
     }
 
-    _onRooms(data) {
+    private _onRooms(data: Json) {
         if (!Array.isArray(data))
             return;
         this.rooms = data;
@@ -229,7 +265,7 @@ export class TupleStore extends Signals.EventEmitter {
 
     // Records how the daemon reports calls, so call detection can be checked
     // against a real incoming call. Only writes when the call part changes.
-    _logCall(data) {
+    private _logCall(data: TupleState) {
         const callJson = JSON.stringify({in_call: data.in_call, call: data.call, phase: callPhase(data)});
         if (callJson === this._lastLoggedCall)
             return;
@@ -238,7 +274,7 @@ export class TupleStore extends Signals.EventEmitter {
     }
 
     // Appends one line to ~/.cache/tuple-deck/<name> when debug logging is on.
-    _debugLog(name, data) {
+    private _debugLog(name: string, data: Json) {
         if (!this._settings.get_boolean('debug-log'))
             return;
         try {
@@ -252,7 +288,7 @@ export class TupleStore extends Signals.EventEmitter {
             stream.write_all(new TextEncoder().encode(line), null);
             stream.close(null);
         } catch (e) {
-            logError(e, 'tuple-deck: debug log');
+            logError(e as object, 'tuple-deck: debug log');
         }
     }
 }
