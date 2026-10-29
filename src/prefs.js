@@ -1,4 +1,5 @@
 import Adw from 'gi://Adw';
+import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
@@ -6,7 +7,7 @@ import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import {TupleCli, findProgram} from './lib/cli.js';
-import {parseSettings} from './lib/model.js';
+import {SHORTCUTS, parseSettings} from './lib/model.js';
 
 // Friendlier labels for Tuple's own settings; unknown ones fall back to the CLI's text.
 const TUPLE_SETTING_LABELS = {
@@ -16,6 +17,77 @@ const TUPLE_SETTING_LABELS = {
     'guest-mode': ['Shared-screen mode', 'Annotate on, or take control of, a screen someone shares'],
     'transcription-model': ['Transcription model', 'Path to a whisper ggml model used for call capture'],
 };
+
+/**
+ * Asks for a key combination. Resolves with its accelerator string, '' when
+ * the user pressed Backspace to remove the shortcut, or null when cancelled.
+ */
+function captureShortcut(parent, title) {
+    return new Promise(resolve => {
+        let result = null;
+        const dialog = new Adw.Dialog({title, content_width: 380});
+        const view = new Adw.ToolbarView({content: new Adw.StatusPage({
+            icon_name: 'preferences-desktop-keyboard-shortcuts-symbolic',
+            title: 'Press the new shortcut',
+            description: 'Esc cancels, Backspace removes the shortcut.',
+        })});
+        view.add_top_bar(new Adw.HeaderBar());
+        dialog.child = view;
+
+        const keys = new Gtk.EventControllerKey({propagation_phase: Gtk.PropagationPhase.CAPTURE});
+        keys.connect('key-pressed', (_c, keyval, keycode, state) => {
+            const mods = state & Gtk.accelerator_get_default_mod_mask();
+            const key = Gdk.keyval_to_lower(keyval);
+            if (!mods && key === Gdk.KEY_Escape) {
+                dialog.close();
+                return Gdk.EVENT_STOP;
+            }
+            if (!mods && key === Gdk.KEY_BackSpace) {
+                result = '';
+                dialog.close();
+                return Gdk.EVENT_STOP;
+            }
+            // Bare keys would swallow normal typing; only function and media
+            // keys may go without a modifier.
+            const bareOk = (key >= Gdk.KEY_F1 && key <= Gdk.KEY_F35) || key >= 0x1008ff00;
+            if (!Gtk.accelerator_valid(key, mods) || (!mods && !bareOk))
+                return Gdk.EVENT_STOP;
+            result = Gtk.accelerator_name_with_keycode(null, key, keycode, mods);
+            dialog.close();
+            return Gdk.EVENT_STOP;
+        });
+        dialog.add_controller(keys);
+        dialog.connect('closed', () => resolve(result));
+        dialog.present(parent);
+    });
+}
+
+function shortcutRow(settings, {key, title, subtitle}) {
+    const row = new Adw.ActionRow({title, subtitle, activatable: true});
+    const label = new Adw.ShortcutLabel({valign: Gtk.Align.CENTER, disabled_text: 'Disabled'});
+    const clear = new Gtk.Button({
+        icon_name: 'edit-clear-symbolic',
+        valign: Gtk.Align.CENTER,
+        tooltip_text: 'Remove shortcut',
+        css_classes: ['flat'],
+    });
+    row.add_suffix(label);
+    row.add_suffix(clear);
+    const sync = () => {
+        const accel = settings.get_strv(key)[0] ?? '';
+        label.accelerator = accel;
+        clear.sensitive = !!accel;
+    };
+    settings.connect(`changed::${key}`, sync);
+    sync();
+    clear.connect('clicked', () => settings.set_strv(key, []));
+    row.connect('activated', async () => {
+        const accel = await captureShortcut(row, title);
+        if (accel !== null)
+            settings.set_strv(key, accel ? [accel] : []);
+    });
+    return row;
+}
 
 export default class TupleDeckPreferences extends ExtensionPreferences {
     async fillPreferencesWindow(window) {
@@ -100,11 +172,21 @@ export default class TupleDeckPreferences extends ExtensionPreferences {
             ['show-call-timer', 'Call timer in the top bar', 'Show how long the current call has been running'],
             ['notify-incoming', 'Incoming call notifications', 'Pop up a notification with an Answer button'],
             ['notify-favorites-online', 'Favorites coming online', 'Notify when a favorite contact comes online'],
+            ['notify-call-cards', 'Notices posted into the call',
+                'Show what agents and integrations post into the call (tuple notifications) as notifications'],
         ]) {
             const row = new Adw.SwitchRow({title, subtitle});
             settings.bind(key, row, 'active', Gio.SettingsBindFlags.DEFAULT);
             general.add(row);
         }
+
+        const shortcuts = new Adw.PreferencesGroup({
+            title: 'Keyboard shortcuts',
+            description: 'Work everywhere in GNOME. Click a row to set its shortcut.',
+        });
+        page.add(shortcuts);
+        for (const shortcut of SHORTCUTS)
+            shortcuts.add(shortcutRow(settings, shortcut));
 
         const paths = new Adw.PreferencesGroup({
             title: 'Programs',

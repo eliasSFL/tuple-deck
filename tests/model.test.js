@@ -3,8 +3,8 @@ import System from 'system';
 
 import {
     Status, callPhase, callTitle, callerName, captureCalls, deriveStatus, firstUrl,
-    formatDuration, joinNames, parseSettings, participantsOf, roomLabel, searchHits,
-    selfMuted, sortContacts,
+    formatDuration, joinNames, notificationCards, ongoingCallLabel, ongoingCalls, parseSettings,
+    participantsOf, roomLabel, searchHits, selfMuted, sortContacts,
 } from '../src/lib/model.js';
 import {cleanError} from '../src/lib/cli.js';
 
@@ -93,6 +93,38 @@ eq(captureCalls([{call_id: 'abc', participants: [ada], started_at: '2026-10-20T1
 eq(captureCalls({calls: [{id: 'x', title: 'Pairing'}]}).map(c => c.title), ['Pairing'], 'capture list wrapped');
 eq(searchHits({hits: [{call_id: 'abc', snippet: ' hello\n world ', speaker: ada}]}).map(h => [h.text, h.speaker]),
     [['hello world', 'Ada Lovelace']], 'search hits');
+
+// -- ongoing calls (call list) ---------------------------------------------------------
+const grace = {id: 3, full_name: 'Grace Hopper', short_name: 'Grace', email: 'grace@example.com'};
+const live = ongoingCalls([
+    {id: 'c1', room: {name: 'Weekly sync ', http_value: 'https://tuple.app/c/w33kly'}, participants: [ada, grace]},
+    {id: 'c2', participants: [grace]},
+    {id: 'c3', participants: []},
+]);
+eq(live.map(c => [c.id, c.target, ongoingCallLabel(c)]), [
+    ['c1', 'https://tuple.app/c/w33kly', 'Weekly sync'],
+    ['c2', 'grace@example.com', 'Call with Grace'],
+], 'ongoing calls: room url, else join by person; nothing to join -> dropped');
+eq(ongoingCalls({calls: [{call_id: 'x', http_value: 'https://tuple.app/c/x'}]}).map(c => c.id), ['x'],
+    'ongoing calls wrapped');
+eq(ongoingCalls(null), [], 'ongoing calls: nothing');
+
+// -- notification cards ------------------------------------------------------------------
+const snap = notificationCards([
+    {id: 'n1', kind: 'notice', state: 'shown', title: 'Hi', body: 'There', sender: 'Claude'},
+    {id: 'n2', kind: 'ask', state: 'pending', title: 'Push?', sender: {full_name: 'Bot'}},
+    {id: 'n3', kind: 'ask', state: 'accepted', title: 'Old'},
+]);
+eq(snap.snapshot, true, 'cards: list is a snapshot');
+eq(snap.cards.map(c => [c.id, c.ask, c.open, c.sender]),
+    [['n1', false, true, 'Claude'], ['n2', true, true, 'Bot'], ['n3', true, false, '']], 'cards: kind, state, sender');
+const event = notificationCards({event: 'canceled', notification: {id: 'n2', title: 'Push?'}});
+eq([event.snapshot, event.cards.map(c => [c.id, c.open])], [false, [['n2', false]]], 'cards: lifecycle event');
+eq(notificationCards({id: 'n4', title: 'x', response: {accepted: true}}).cards[0].open, false,
+    'cards: a response closes it');
+eq(notificationCards({notifications: [{id: 'n5', accept_label: 'Yes'}]}).cards.map(c => [c.ask, c.open]),
+    [[true, true]], 'cards: wrapped snapshot, accept_label means ask');
+eq(notificationCards({error: 'not in a call'}).cards, [], 'cards: error is no card');
 
 // -- errors & urls --------------------------------------------------------------------
 eq(cleanError('{"error":"not in a call"}'), 'not in a call', 'json error');

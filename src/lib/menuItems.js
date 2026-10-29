@@ -4,7 +4,10 @@ import St from 'gi://St';
 
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import {isOnline, personName, roomLabel, roomOccupants} from './model.js';
+import {
+    formatDuration, formatWhen, isOnline, joinNames, ongoingCallLabel, personName, roomLabel,
+    roomOccupants,
+} from './model.js';
 
 /**
  * Makes `menu` (a section or submenu) show one item per entry, in order,
@@ -104,10 +107,13 @@ class HeaderItem extends PopupMenu.PopupBaseMenuItem {
     }
 });
 
-/** A contact: click calls them (or adds them to the current call); star toggles favorite. */
+/**
+ * A contact: click calls them (or adds them to the current call); star toggles
+ * favorite. Contacts from outside your team also get a remove button.
+ */
 export const ContactItem = GObject.registerClass(
 class ContactItem extends PopupMenu.PopupBaseMenuItem {
-    _init({onActivate, onToggleFavorite}) {
+    _init({onActivate, onToggleFavorite, onRemove}) {
         super._init({style_class: 'tuple-deck-row'});
         this._dot = presenceDot();
         this.add_child(this._dot);
@@ -116,6 +122,8 @@ class ContactItem extends PopupMenu.PopupBaseMenuItem {
         this._detail = subtitle;
         this.add_child(box);
         this.label_actor = title;
+        this._remove = iconButton('list-remove-symbolic', 'Remove contact', () => onRemove(this.contact));
+        this.add_child(this._remove);
         this._star = iconButton('non-starred-symbolic', 'Favorite', () => onToggleFavorite(this.contact));
         this.add_child(this._star);
         this.connect('activate', () => onActivate(this.contact));
@@ -134,6 +142,7 @@ class ContactItem extends PopupMenu.PopupBaseMenuItem {
         else if (contact.kind === 'agent')
             parts.push('Agent');
         setSubtitle(this._detail, parts.join(' · '));
+        this._remove.visible = contact.kind !== 'teammate';
         this._star.child.icon_name = contact.favorited ? 'starred-symbolic' : 'non-starred-symbolic';
         this._star.accessible_name = contact.favorited ? 'Remove from favorites' : 'Add to favorites';
         this.accessible_name = `${inCall ? 'Add' : 'Call'} ${personName(contact)}`;
@@ -192,5 +201,53 @@ class ParticipantItem extends PopupMenu.PopupBaseMenuItem {
             ? 'microphone-disabled-symbolic' : 'audio-input-microphone-symbolic';
         this._mic.opacity = participant.muted === null ? 0 : 255;
         this._remove.visible = !participant.isSelf;
+    }
+});
+
+/** A call in progress you can join (from `call list`). */
+export const LiveCallItem = GObject.registerClass(
+class LiveCallItem extends PopupMenu.PopupBaseMenuItem {
+    _init({onActivate}) {
+        super._init({style_class: 'tuple-deck-row'});
+        const dot = presenceDot();
+        setPresence(dot, 'online');
+        this.add_child(dot);
+        const {box, title, subtitle} = twoLineLabel();
+        this._name = title;
+        this._detail = subtitle;
+        this.add_child(box);
+        this.label_actor = title;
+        this.connect('activate', () => onActivate(this.call));
+    }
+
+    update(call) {
+        this.call = call;
+        this._name.text = ongoingCallLabel(call);
+        const parts = [];
+        if (call.title && call.people.length)
+            parts.push(joinNames(call.people.map(p => p.shortName)));
+        if (call.startedAt)
+            parts.push(formatDuration((Date.now() - call.startedAt) / 1000));
+        setSubtitle(this._detail, parts.join(' · '));
+        this.accessible_name = `Join ${ongoingCallLabel(call)}`;
+    }
+});
+
+/** A stored call: click opens its Markdown export; the bin deletes it. */
+export const HistoryItem = GObject.registerClass(
+class HistoryItem extends PopupMenu.PopupBaseMenuItem {
+    _init(call, {onActivate, onDelete}) {
+        super._init({style_class: 'tuple-deck-row'});
+        this.call = call;
+        const label = new St.Label({
+            text: [formatWhen(call.startedAt), call.title].filter(Boolean).join(' · '),
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this.add_child(label);
+        this.label_actor = label;
+        this._delete = iconButton('user-trash-symbolic', 'Delete this call', () => onDelete(this.call));
+        this.add_child(this._delete);
+        this.connect('activate', () => onActivate(this.call));
     }
 });

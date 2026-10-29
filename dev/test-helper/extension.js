@@ -94,13 +94,33 @@ export default class TestHelper extends Extension {
         const [x, y] = actor.get_transformed_position();
         const [w, h] = actor.get_transformed_size();
         this._log(`  click ${actor.constructor.name} at ${Math.round(x + w / 2)},${Math.round(y + h / 2)} (${Math.round(w)}x${Math.round(h)}, mapped=${actor.mapped})`);
+        await this._clickAt(x + w / 2, y + h / 2);
+    }
+
+    // For windows of other processes (prefs), which have no actors to aim at.
+    async _clickAt(x, y) {
         const now = () => GLib.get_monotonic_time();
-        this._pointer.notify_absolute_motion(now(), x + w / 2, y + h / 2);
+        this._pointer.notify_absolute_motion(now(), x, y);
         await wait(150);
         this._pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
         await wait(60);
         this._pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
         await wait(400);
+    }
+
+    // Presses the keyvals in order, then releases them in reverse (a chord).
+    async _keys(keyvals) {
+        if (!this._keyboard) {
+            const seat = global.stage.context.get_backend().get_default_seat();
+            this._keyboard = seat.create_virtual_device(Clutter.InputDeviceType.KEYBOARD_DEVICE);
+            await wait(500);
+        }
+        const now = () => GLib.get_monotonic_time();
+        for (const k of keyvals)
+            this._keyboard.notify_keyval(now(), k, Clutter.KeyState.PRESSED);
+        for (const k of [...keyvals].reverse())
+            this._keyboard.notify_keyval(now(), k, Clutter.KeyState.RELEASED);
+        await wait(300);
     }
 
     async _shot(name) {
@@ -136,12 +156,15 @@ export default class TestHelper extends Extension {
 
         const ctx = {
             Main,
+            Clutter,
             GLib,
             wait,
             readText,
             indicator: () => this._indicator,
             deck: () => this._deck,
             click: a => this._click(a),
+            clickAt: (x, y) => this._clickAt(x, y),
+            keys: (...keyvals) => this._keys(keyvals),
             shot: n => this._shot(n),
         };
         for (const [op, arg] of plan) {
@@ -165,7 +188,7 @@ export default class TestHelper extends Extension {
             }
             case 'eval': {
                 // eslint-disable-next-line no-new-func
-                const fn = new Function('ctx', `const {indicator, deck, Main, wait, click, shot, readText, GLib} = ctx;
+                const fn = new Function('ctx', `const {indicator, deck, Main, wait, click, clickAt, keys, shot, readText, GLib, Clutter} = ctx;
                     return (async () => { ${arg} })();`);
                 const value = await fn(ctx);
                 if (value !== undefined)

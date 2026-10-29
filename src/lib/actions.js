@@ -8,8 +8,8 @@ import St from 'gi://St';
 import {EXIT_CALL_UNANSWERED, findProgram} from './cli.js';
 import {confirm, openSearchDialog, promptLoginCode, promptText} from './dialogs.js';
 import {
-    Status, captureCalls, contactRef, firstUrl, machinesOf, parseSettings,
-    personName, personalRoom, roomLabel, searchHits,
+    Status, captureCalls, contactRef, firstUrl, machinesOf, ongoingCallLabel, ongoingCalls,
+    parseSettings, personName, personalRoom, roomLabel, searchHits,
 } from './model.js';
 import {Urgency} from './notify.js';
 
@@ -158,6 +158,31 @@ export class Actions {
         return this._do(args, {label: 'Answering'});
     }
 
+    /** Calls in progress that you could join (`call list --joinable`). */
+    async ongoingCalls() {
+        const result = await this._cli.run(['call', 'list', '--joinable', '--limit', '20'], {timeout: 10});
+        return result.ok ? ongoingCalls(result.data) : [];
+    }
+
+    async joinCall(call) {
+        const name = ongoingCallLabel(call);
+        const args = ['call', 'join', call.target];
+        if (this._inCall) {
+            if (!await this._confirmSwitch(name))
+                return;
+            args.push('--switch');
+        }
+        await this._do(args, {label: `Joining ${name}`});
+    }
+
+    _confirmSwitch(name) {
+        return confirm({
+            title: `Switch to ${name}?`,
+            description: 'You will leave your current call.',
+            okLabel: 'Switch',
+        });
+    }
+
     async leave() {
         await this._do(['call', 'leave'], {label: 'Leaving the call'});
     }
@@ -242,11 +267,7 @@ export class Actions {
     async joinRoom(room) {
         const args = ['rooms', 'join', room.http_value || room.slug];
         if (this._inCall) {
-            if (!await confirm({
-                title: `Switch to ${roomLabel(room)}?`,
-                description: 'You will leave your current call.',
-                okLabel: 'Switch',
-            }))
+            if (!await this._confirmSwitch(roomLabel(room)))
                 return;
             args.push('--switch');
         }
@@ -305,6 +326,34 @@ export class Actions {
         });
     }
 
+    async inviteContact() {
+        const email = await promptText({
+            title: 'Invite someone to Tuple',
+            description: 'They get an email invitation to Tuple.',
+            hint: 'Email address',
+            okLabel: 'Send invite',
+        });
+        if (!email)
+            return;
+        if (!/^\S+@\S+\.\S+$/.test(email)) {
+            this._notifier.error('Not an email address', email);
+            return;
+        }
+        await this._do(['contacts', 'invite', email], {label: 'Inviting', success: `Invited ${email}`});
+    }
+
+    async removeContact(contact) {
+        const name = personName(contact);
+        if (!await confirm({
+            title: `Remove ${name} from your contacts?`,
+            description: 'They will no longer show up in your contact list.',
+            okLabel: 'Remove',
+            destructive: true,
+        }))
+            return;
+        await this._do(['contacts', 'remove', contactRef(contact)], {label: `Removing ${name}`});
+    }
+
     // -- machines ----------------------------------------------------------------
 
     async machines() {
@@ -331,6 +380,19 @@ export class Actions {
         });
         if (result.ok)
             this.openUri(Gio.File.new_for_path(dest).get_uri());
+    }
+
+    /** Deletes one stored call capture; resolves true when it was deleted. */
+    async deleteCapture(call) {
+        if (!await confirm({
+            title: `Delete "${call.title}"?`,
+            description: "Its transcript, screen content and media are deleted from this machine. This can't be undone.",
+            okLabel: 'Delete',
+            destructive: true,
+        }))
+            return false;
+        const result = await this._do(['capture', 'delete', call.id], {label: 'Deleting call'});
+        return result.ok;
     }
 
     openSearch() {

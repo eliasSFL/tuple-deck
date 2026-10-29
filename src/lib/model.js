@@ -15,6 +15,14 @@ export const Status = Object.freeze({
 
 export const REACTIONS = Object.freeze(['airhorn', 'trombone', 'flute']);
 
+// Global keyboard shortcuts: gsettings key (type "as") -> labels for prefs.
+export const SHORTCUTS = Object.freeze([
+    {key: 'shortcut-toggle-mute', title: 'Mute / unmute', subtitle: 'Toggle your microphone in the current call'},
+    {key: 'shortcut-answer', title: 'Answer', subtitle: 'Pick up a ringing call'},
+    {key: 'shortcut-leave', title: 'Leave call', subtitle: 'Hang up, or cancel a call you placed'},
+    {key: 'shortcut-join-clipboard', title: 'Join link from clipboard', subtitle: 'Join the tuple.app link you copied'},
+]);
+
 const INCOMING_RE = /incoming|ring/;
 const OUTGOING_RE = /outgoing|calling|dial|connecting/;
 
@@ -233,6 +241,75 @@ export function searchHits(data) {
         speaker: h.speaker ? personName(h.speaker) : null,
         at: Date.parse(h.start ?? h.time ?? h.at ?? '') || null,
     })).filter(h => h.callId);
+}
+
+// -- ongoing calls (tuple call list) ------------------------------------------
+
+/**
+ * Normalizes `call list` output. Its shape isn't documented and only shows up
+ * while teammates are on calls, so this accepts the field names `state.call`
+ * and rooms use. `target` is what `call join` takes: the call's URL, or else
+ * someone on it (join by person).
+ */
+export function ongoingCalls(data) {
+    return asList(data, 'calls', 'items').map(c => {
+        const people = asList(c.participants ?? c.members, 'participants').map(p => ({
+            name: personName(p),
+            shortName: shortName(p),
+            email: p?.email ?? null,
+        }));
+        const room = c.room && typeof c.room === 'object' ? c.room : null;
+        const url = c.http_value || c.url || c.join_url || room?.http_value || null;
+        return {
+            id: String(c.id ?? c.call_id ?? url ?? ''),
+            title: String(c.title || room?.name || '').trim(),
+            people,
+            url,
+            target: url || people[0]?.email || (people.length ? people[0].name : null),
+            favorited: !!c.favorited,
+            startedAt: Date.parse(c.started_at ?? '') || null,
+        };
+    }).filter(c => c.id && c.target);
+}
+
+export function ongoingCallLabel(call) {
+    if (call.title)
+        return call.title;
+    return call.people.length ? `Call with ${joinNames(call.people.map(p => p.shortName))}` : 'Call';
+}
+
+// -- call notification cards (tuple notifications) ----------------------------
+
+// A card is done once it is answered or withdrawn; anything else still shows.
+const CARD_CLOSED_RE = /accept|reject|declin|cancel|dismiss|expire|resolv|clos|withdr|timeout|timed.?out|\banswered|\bdone/;
+
+/**
+ * Normalizes `notifications list` / `notifications follow` output: notification
+ * cards an agent or integration posted into the current call. Undocumented, so
+ * this takes either a snapshot (a list, or {notifications: [...]}) or a single
+ * lifecycle event ({event, notification} or a bare card).
+ *
+ * @returns {{snapshot: boolean, cards: Array<{id: string, title: string,
+ *   body: string, sender: string, ask: boolean, open: boolean}>}}
+ */
+export function notificationCards(data) {
+    const snapshot = Array.isArray(data) || Array.isArray(data?.notifications) || Array.isArray(data?.items);
+    const raw = snapshot ? asList(data, 'notifications', 'items') : [data];
+    const cards = raw.map(item => {
+        const card = [item?.notification, item?.data, item].find(x => x && typeof x === 'object') ?? {};
+        const lifecycle = String(card.state ?? card.status ?? item?.event ?? item?.state ?? '').toLowerCase();
+        const kind = String(card.kind ?? card.type ?? '').toLowerCase();
+        const sender = card.sender;
+        return {
+            id: String(card.id ?? card.notification_id ?? item?.id ?? ''),
+            title: String(card.title ?? '').trim(),
+            body: String(card.body ?? card.message ?? '').trim(),
+            sender: sender && typeof sender === 'object' ? personName(sender) : String(sender ?? '').trim(),
+            ask: /ask|decision|question/.test(kind) || 'accept_label' in card,
+            open: !CARD_CLOSED_RE.test(lifecycle) && !card.response,
+        };
+    }).filter(c => c.id);
+    return {snapshot, cards};
 }
 
 /** Normalizes `machines list` output. */

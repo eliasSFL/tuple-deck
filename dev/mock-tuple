@@ -24,12 +24,14 @@ Available Commands:
   capture       Capture and inspect call history
   contacts      People and availability
   machines      List your other connected machines
+  notifications External call notifications
   rooms         Rooms and persistent spaces
   screen        Capture the shared screen
   start         Ensure the daemon is started
   state         Show current application state
   stop          Stop the daemon
   version       Print the app version
+  whoami        Print the authenticated user's identity
 
 Deprecated Commands:
   set           Update a setting with the given value
@@ -93,6 +95,15 @@ def main():
         follow("contacts.json")
     elif args == ["rooms", "follow"]:
         follow("rooms.json")
+    elif args == ["notifications", "follow"]:
+        if not json.loads(read("state.json", "{}")).get("in_call"):
+            print('{"error":"not in a call"}')
+            return
+        follow("notifications.json")
+    elif args[:2] == ["call", "list"]:
+        print(read("calls.json", "[]"))
+    elif args == ["whoami"]:
+        print(json.dumps({"id": 1000, "email": "you@example.com", "full_name": "Alex Doe", "short_name": "Alex"}))
     elif args == ["settings"]:
         print(SETTINGS)
     elif args == ["version"]:

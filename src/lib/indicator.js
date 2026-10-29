@@ -6,11 +6,12 @@ import St from 'gi://St';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
-import {ContactItem, HeaderItem, ParticipantItem, RoomItem, syncItems} from './menuItems.js';
 import {
-    REACTIONS, Status, callStartedAt, callTitle, callerName, formatDuration, formatWhen,
-    isOnline, isSelfSharing, participantsOf, selfMuted, sharerId, sortContacts,
-    sortRooms,
+    ContactItem, HeaderItem, HistoryItem, LiveCallItem, ParticipantItem, RoomItem, syncItems,
+} from './menuItems.js';
+import {
+    REACTIONS, Status, callStartedAt, callTitle, callerName, formatDuration, isOnline,
+    isSelfSharing, participantsOf, selfMuted, sharerId, sortContacts, sortRooms,
 } from './model.js';
 
 const REACTION_LABELS = {airhorn: 'Air horn', trombone: 'Sad trombone', flute: 'Flute'};
@@ -39,6 +40,8 @@ class TupleIndicator extends PanelMenu.Button {
         this._contactItems = new Map();
         this._roomItems = new Map();
         this._participantItems = new Map();
+        this._liveCallItems = new Map();
+        this._liveCalls = [];
 
         this._buildPanelButton();
         this._buildMenu();
@@ -141,6 +144,7 @@ class TupleIndicator extends PanelMenu.Button {
 
         this._listsSeparator = new PopupMenu.PopupSeparatorMenuItem();
         menu.addMenuItem(this._listsSeparator);
+        this._buildLiveCalls();
         this._buildContacts();
         this._buildRooms();
         this._buildHistory();
@@ -222,6 +226,16 @@ class TupleIndicator extends PanelMenu.Button {
         section.addMenuItem(this._leaveItem);
     }
 
+    _buildLiveCalls() {
+        this._liveCallsSub = new PopupMenu.PopupSubMenuMenuItem('Live calls', true);
+        this._liveCallsSub.icon.icon_name = 'call-start-symbolic';
+        this._liveCallsList = new PopupMenu.PopupMenuSection();
+        this._liveCallsSub.menu.addMenuItem(this._liveCallsList);
+        this._liveCallsEmpty = new PopupMenu.PopupMenuItem('No live calls', {reactive: false});
+        this._liveCallsSub.menu.addMenuItem(this._liveCallsEmpty);
+        this.menu.addMenuItem(this._liveCallsSub);
+    }
+
     _buildContacts() {
         this._contactsSub = new PopupMenu.PopupSubMenuMenuItem('Contacts', true);
         this._contactsSub.icon.icon_name = 'avatar-default-symbolic';
@@ -229,6 +243,9 @@ class TupleIndicator extends PanelMenu.Button {
         this._contactsSub.menu.addMenuItem(this._contactsList);
         this._contactsEmpty = new PopupMenu.PopupMenuItem('No contacts yet', {reactive: false});
         this._contactsSub.menu.addMenuItem(this._contactsEmpty);
+        this._contactsSub.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this._contactsSub.menu.addMenuItem(this._item('Invite someone to Tuple…',
+            () => this._actions.inviteContact(), 'mail-send-symbolic'));
         this.menu.addMenuItem(this._contactsSub);
     }
 
@@ -269,10 +286,12 @@ class TupleIndicator extends PanelMenu.Button {
         const status = this._store.status;
         if (status === Status.DOWN || status === Status.SIGNED_OUT)
             return;
-        const [machines, settings] = await Promise.all([
+        const [machines, settings, liveCalls] = await Promise.all([
             this._actions.machines(),
             this._store.has('settings') ? this._actions.getSettings() : Promise.resolve([]),
+            this._actions.ongoingCalls(),
         ]);
+        this._liveCalls = liveCalls;
         this._machines = machines;
         this._machinesSub.menu.removeAll();
         for (const m of machines)
@@ -295,8 +314,13 @@ class TupleIndicator extends PanelMenu.Button {
             return;
         }
         for (const call of calls) {
-            const label = [formatWhen(call.startedAt), call.title].filter(Boolean).join(' · ');
-            this._historyList.addMenuItem(this._item(label, () => this._actions.openCall(call.id)));
+            this._historyList.addMenuItem(new HistoryItem(call, {
+                onActivate: c => this._actions.openCall(c.id),
+                onDelete: async c => {
+                    if (await this._actions.deleteCapture(c))
+                        this._loadHistory();
+                },
+            }));
         }
     }
 
@@ -321,6 +345,9 @@ class TupleIndicator extends PanelMenu.Button {
             this._capturingGuess = false;
         }
 
+        // `call list` may include the call you are already on.
+        const liveCalls = this._liveCalls.filter(c => !call || c.id !== String(call.id));
+
         this._syncHeader(status, state);
         setVisible(
             this._startItem, status === Status.DOWN,
@@ -330,6 +357,7 @@ class TupleIndicator extends PanelMenu.Button {
             this._callSection, inCall,
             this._idleSection, status === Status.IDLE || status === Status.OFFLINE,
             this._listsSeparator, ready,
+            this._liveCallsSub, ready,
             this._contactsSub, ready,
             this._roomsSub, ready,
             this._historySub, ready && store.has('capture'),
@@ -350,6 +378,7 @@ class TupleIndicator extends PanelMenu.Button {
         if (inCall)
             this._syncCall(status, call, selfId);
         if (ready) {
+            this._syncLiveCalls(liveCalls);
             this._syncContacts(inCall);
             this._syncRooms();
         }
@@ -358,8 +387,8 @@ class TupleIndicator extends PanelMenu.Button {
     }
 
     _syncHeader(status, state) {
-        const user = state?.user;
-        const name = user?.full_name || user?.short_name || user?.email || 'Tuple';
+        const user = {...state?.user, ...this._store.identity};
+        const name = user.full_name || user.short_name || user.email || 'Tuple';
         const version = state?.app_version ?? '';
         switch (status) {
         case Status.DOWN:
@@ -384,7 +413,7 @@ class TupleIndicator extends PanelMenu.Button {
             const online = state?.contacts?.online ?? 0;
             this._header.update({
                 title: name,
-                subtitle: [`${online} online`, version].filter(Boolean).join(' · '),
+                subtitle: [user.email, `${online} online`, version].filter(Boolean).join(' · '),
                 gicon: this._gicon,
             });
         }
@@ -461,8 +490,19 @@ class TupleIndicator extends PanelMenu.Button {
             create: () => new ContactItem({
                 onActivate: c => (this._inCallNow() ? this._actions.addParticipant(c) : this._actions.callContact(c)),
                 onToggleFavorite: c => this._actions.toggleContactFavorite(c),
+                onRemove: c => this._actions.removeContact(c),
             }),
             update: (item, c) => item.update(c, {inCall}),
+        });
+    }
+
+    _syncLiveCalls(calls) {
+        this._liveCallsSub.label.text = `Live calls${calls.length ? ` · ${calls.length}` : ''}`;
+        this._liveCallsEmpty.visible = calls.length === 0;
+        syncItems(this._liveCallsList, this._liveCallItems, calls, {
+            keyOf: c => c.id,
+            create: () => new LiveCallItem({onActivate: c => this._actions.joinCall(c)}),
+            update: (item, c) => item.update(c),
         });
     }
 
@@ -484,6 +524,17 @@ class TupleIndicator extends PanelMenu.Button {
             }),
             update: (item, r) => item.update(r),
         });
+    }
+
+    /**
+     * For the keyboard shortcut: flips the mute switch as if it were clicked.
+     * Returns the new state, or null when there's no call to mute in.
+     */
+    toggleMute() {
+        if (this._store.status !== Status.IN_CALL)
+            return null;
+        this._muteSwitch.toggle();
+        return this._muteSwitch.state;
     }
 
     _syncPanel() {

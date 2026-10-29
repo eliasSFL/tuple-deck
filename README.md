@@ -32,12 +32,21 @@ and a crossed-out microphone when you are muted.
 | Incoming call | Who's calling + Answer (also as a notification with an Answer button) |
 | Calling someone | Ringing status + Cancel |
 | In a call | Title and timer, Mute, Share my screen, Control their screen, Participants (remove), Reactions & more (air horn / sad trombone / flute, screenshot of the shared screen, transcript capture), Leave |
-| Always | Contacts (presence dot, ⭐ favourite, click to call, or to add to the current call), Rooms (join, copy link, ⭐, create team room), Recent calls (opens a Markdown export, plus full-text search), your other machines, update banner, Settings, Stop Tuple, Log out |
+| Always | Your name and account in the header, Live calls (calls your teammates are on that you can join, or "No live calls"), Contacts (presence dot, ⭐ favourite, click to call, or to add to the current call, remove for contacts outside your team, invite someone by email), Rooms (join, copy link, ⭐, create team room), Recent calls (opens a Markdown export, delete, plus full-text search), your other machines, update banner, Settings, Stop Tuple, Log out |
+
+**Notices posted into the call:** when an agent or integration posts a notice or
+asks a question in your current call (`tuple notifications`), it also shows up
+as a GNOME notification, and is withdrawn when it's answered or the call ends.
+
+**Keyboard shortcuts:** mute / unmute, answer, leave, and join the link on the
+clipboard, set under Settings → Extension. They work anywhere in GNOME, and
+mute / unmute shows the result on screen.
 
 **Settings** (from the menu, or `gnome-extensions prefs tuple-deck@eliassfl.github.io`):
 Tuple's own settings (annotation overlay, start muted, capture method,
 shared-screen mode, transcription model), plus the extension's options: call
-timer, notifications, the path to `tuple`, the update command and a debug log.
+timer, notifications, keyboard shortcuts, the path to `tuple`, the update
+command and a debug log.
 
 ## Requirements
 
@@ -81,12 +90,12 @@ leave it empty for the bundled one.
 
 | Need | CLI |
 |---|---|
-| Live state | `tuple --format json state follow`, `contacts follow`, `rooms follow`: long-running, one JSON snapshot per line, restarted with backoff if Tuple stops |
-| Calls | `call start / accept / join / leave / mute / unmute / react`, `call participants add / remove` |
-| Rooms, favourites | `rooms join / create / favorite / unfavorite`, `contacts favorite / unfavorite` |
-| History | `capture list / search / export --as markdown`, `capture start / stop` |
+| Live state | `tuple --format json state follow`, `contacts follow`, `rooms follow`: long-running, one JSON snapshot per line, restarted with backoff if Tuple stops. `notifications follow` runs the same way, only while you're in a call |
+| Calls | `call start / accept / join / leave / mute / unmute / react`, `call participants add / remove`, `call list --joinable` (read when the menu opens) |
+| Rooms, contacts | `rooms join / create / favorite / unfavorite`, `contacts favorite / unfavorite / invite / remove` |
+| History | `capture list / search / export --as markdown / delete`, `capture start / stop` |
 | Screen | `screen -o ~/Pictures/Tuple/…` |
-| Account / daemon | `start`, `stop`, `login`, `auth`, `logout`, `machines list` |
+| Account / daemon | `start`, `stop`, `login`, `auth`, `logout`, `whoami`, `machines list` |
 | **Deprecated, still used** | `share` / `unshare` and `settings` / `set` (no replacements yet). They don't accept `--format json`. The UI hides each control when its command disappears from `tuple --help`. |
 
 Known gaps:
@@ -96,6 +105,15 @@ Known gaps:
   present (state contains `incoming`/`ring`)" as incoming. If incoming calls
   aren't detected, turn on **Settings → Extension → Log call state changes**,
   receive a call, and look at `~/.cache/tuple-deck/state-log.ndjson`.
+- **Live calls and call notices are also inferred.** `call list` and
+  `notifications follow` only return something while calls are going on, so
+  their parsing accepts several likely field names. With the debug log on,
+  call notices are written to `~/.cache/tuple-deck/notifications-log.ndjson`.
+- **Questions can't be answered from GNOME.** The CLI can only post and
+  withdraw notices; accepting or rejecting one happens in the Tuple app, so
+  the notification says so instead of showing buttons.
+- Remove is offered only for contacts outside your team (`kind` other than
+  `teammate`), assuming teammates come from the team and can't be removed.
 - Mute, share and capture switches use the call payload when it includes that
   state and otherwise fall back to remembering what you last clicked.
 - Call history needs Tuple's capture store, which needs a transcription model.

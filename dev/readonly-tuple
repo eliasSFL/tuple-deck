@@ -8,7 +8,8 @@ args=("$@")
 [[ "${args[0]:-}" == "--format" ]] && args=("${args[@]:2}")
 case "${args[*]}" in
     "state follow" | "contacts follow" | "rooms follow" | "settings" | "version" | "--help" | \
-    "machines list" | "capture list --limit "[0-9]*)
+    "machines list" | "capture list --limit "[0-9]* | "call list --joinable --limit "[0-9]* | \
+    "whoami" | "notifications follow")
         ;;
     *)
         echo '{"error":"blocked by dev/readonly-tuple"}'

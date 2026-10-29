@@ -1,0 +1,6 @@
+[
+  {"id": "n-0001", "kind": "notice", "state": "shown", "sender": "Claude", "title": "Tests passed",
+   "body": "All 112 tests pass on the branch you're sharing."},
+  {"id": "n-0002", "kind": "ask", "state": "pending", "sender": "Claude", "title": "Push the fix?",
+   "body": "Push the branch and open a pull request.", "accept_label": "Push", "reject_label": "Not yet"}
+]

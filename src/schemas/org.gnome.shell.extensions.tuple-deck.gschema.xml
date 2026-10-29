@@ -18,6 +18,27 @@
       <default>false</default>
       <summary>Notify when a favorite comes online</summary>
     </key>
+    <key name="notify-call-cards" type="b">
+      <default>true</default>
+      <summary>Show notification cards posted into the call</summary>
+      <description>Mirrors the notices and questions that agents and integrations post into the current call (tuple notifications) as desktop notifications.</description>
+    </key>
+    <key name="shortcut-toggle-mute" type="as">
+      <default>[]</default>
+      <summary>Keyboard shortcut: mute / unmute</summary>
+    </key>
+    <key name="shortcut-answer" type="as">
+      <default>[]</default>
+      <summary>Keyboard shortcut: answer a ringing call</summary>
+    </key>
+    <key name="shortcut-leave" type="as">
+      <default>[]</default>
+      <summary>Keyboard shortcut: leave or cancel the call</summary>
+    </key>
+    <key name="shortcut-join-clipboard" type="as">
+      <default>[]</default>
+      <summary>Keyboard shortcut: join the Tuple link on the clipboard</summary>
+    </key>
     <key name="update-command" type="s">
       <default>''</default>
       <summary>Command that installs the latest Tuple release</summary>

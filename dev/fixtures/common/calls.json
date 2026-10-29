@@ -1,0 +1,9 @@
+[
+  {"id": "f00d0001-0000-0000-0000-000000000000", "title": "", "started_at": "2026-10-29T09:00:00Z",
+   "room": {"slug": "w33kly", "name": "Weekly sync ", "http_value": "https://tuple.app/c/w33kly"},
+   "participants": [{"id": 3, "email": "grace@example.com", "full_name": "Grace Hopper", "short_name": "Grace"},
+                    {"id": 6, "email": "ken@example.com", "full_name": "Ken Thompson", "short_name": "Ken"}]},
+  {"id": "f00d0002-0000-0000-0000-000000000000", "title": "",
+   "participants": [{"id": 5, "email": "margaret@example.com", "full_name": "Margaret Hamilton", "short_name": "Margaret"},
+                    {"id": 4, "email": "linus@example.com", "full_name": "Linus Torvalds", "short_name": "Linus"}]}
+]
