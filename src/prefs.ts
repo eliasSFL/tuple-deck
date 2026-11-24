@@ -18,6 +18,10 @@ const TUPLE_SETTING_LABELS: Record<string, [string, string]> = {
     'transcription-model': ['Transcription model', 'Path to a whisper ggml model used for call capture'],
 };
 
+// Tuple settings not worth a row: `webcam` is an opaque device ID that the
+// camera picker sets ("Share my webcam…" in the call menu).
+const HIDDEN_TUPLE_SETTINGS = new Set(['webcam']);
+
 /**
  * Asks for a key combination. Resolves with its accelerator string, '' when
  * the user pressed Backspace to remove the shortcut, or null when cancelled.
@@ -112,7 +116,8 @@ export default class TupleDeckPreferences extends ExtensionPreferences {
         page.add(group);
 
         const result = await cli.run(['settings'], {json: false, timeout: 10});
-        const items = result.ok ? parseSettings(result.stdout) : [];
+        const items = result.ok
+            ? parseSettings(result.stdout).filter(item => !HIDDEN_TUPLE_SETTINGS.has(item.name)) : [];
         if (!items.length) {
             group.add(new Adw.ActionRow({
                 title: "Couldn't read Tuple's settings",

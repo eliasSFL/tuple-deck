@@ -4,7 +4,7 @@
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 
-import type {Json} from './model.js';
+import {type Json, type Reactions, parseHelpCommands, parseReactions} from './model.js';
 
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 Gio._promisify(Gio.DataInputStream.prototype, 'read_line_async');
@@ -168,25 +168,22 @@ export class TupleCli {
         return result;
     }
 
-    /** Lists top-level command names (current and deprecated) from `tuple --help`. */
+    /**
+     * Lists command names (current and deprecated) from `tuple --help`, plus
+     * the `call` subcommands as "call <name>" from `tuple call --help`.
+     */
     async commands(): Promise<Set<string>> {
-        const {stdout} = await this.run(['--help'], {json: false, timeout: 10});
-        const names = new Set<string>();
-        let inList = false;
-        for (const line of stdout.split('\n')) {
-            if (/^(Available|Deprecated) Commands:/.test(line)) {
-                inList = true;
-                continue;
-            }
-            if (!line.trim()) {
-                inList = false;
-                continue;
-            }
-            const m = inList && line.match(/^\s+(\S+)/);
-            if (m)
-                names.add(m[1]);
-        }
-        return names;
+        const [top, call] = await Promise.all([
+            this.run(['--help'], {json: false, timeout: 10}),
+            this.run(['call', '--help'], {json: false, timeout: 10}),
+        ]);
+        return new Set([...parseHelpCommands(top.stdout), ...parseHelpCommands(call.stdout, 'call ')]);
+    }
+
+    /** The reactions `tuple call react` accepts, from its --help. */
+    async reactions(): Promise<Reactions> {
+        const {stdout} = await this.run(['call', 'react', '--help'], {json: false, timeout: 10});
+        return parseReactions(stdout);
     }
 }
 

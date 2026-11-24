@@ -78,8 +78,86 @@ export const Status = Object.freeze({
 } as const);
 export type Status = typeof Status[keyof typeof Status];
 
-export const REACTIONS = Object.freeze(['airhorn', 'trombone', 'flute'] as const);
-export type Reaction = typeof REACTIONS[number];
+/** What `tuple call react` accepts, by how it shows up in the call. */
+export interface Reactions {
+    sounds: string[];       // play for everyone
+    emoji: string[];        // shown on your webcam tile
+    animations: string[];   // played on your webcam tile
+}
+
+// Clis before v2026_11_19.0 only had sounds and didn't list them in --help.
+export const DEFAULT_REACTIONS: Readonly<Reactions> = Object.freeze({
+    sounds: ['airhorn', 'trombone', 'flute'],
+    emoji: [],
+    animations: [],
+});
+
+const REACTION_LABELS: Record<string, string> = {
+    'airhorn': 'Air horn',
+    'trombone': 'Sad trombone',
+    'flute': 'Flute',
+    'thumbs-up': '👍',
+    'plus-one': '+1',
+    'thumbs-down': '👎',
+    'clap': '👏',
+    'laugh': '😂',
+    'heart': '❤️',
+    'tada': '🎉',
+    'wow': '😮',
+    'ship-it': 'Ship it',
+    'table-flip': 'Table flip',
+    'this-is-fine': 'This is fine',
+};
+
+/** Menu label for a reaction; unknown ones become "Some reaction". */
+export function reactionLabel(name: string): string {
+    if (REACTION_LABELS[name])
+        return REACTION_LABELS[name];
+    const words = name.replace(/[-_]+/g, ' ').trim();
+    return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Reads the reaction lists out of `tuple call react --help`, whose lines look
+ * like "Emoji show on your webcam tile: thumbs-up, plus-one, heart.".
+ * Falls back to DEFAULT_REACTIONS when the help text lists none.
+ */
+export function parseReactions(text: string | null | undefined): Reactions {
+    const out: Reactions = {sounds: [], emoji: [], animations: []};
+    const keys: Record<string, keyof Reactions> = {sounds: 'sounds', emoji: 'emoji', animations: 'animations'};
+    for (const line of (text ?? '').split('\n')) {
+        const m = line.match(/^\s*(\w+)\b[^:]*:\s*([a-z0-9][a-z0-9_, -]*?)\.?\s*$/i);
+        const key = m && keys[m[1].toLowerCase()];
+        if (key)
+            out[key] = m[2].split(',').map(s => s.trim()).filter(Boolean);
+    }
+    return out.sounds.length || out.emoji.length || out.animations.length
+        ? out : {...DEFAULT_REACTIONS};
+}
+
+/**
+ * Command names from a cobra `--help` page's "Available Commands" and
+ * "Deprecated Commands" lists, each prefixed with `prefix` ("call " for
+ * `tuple call --help`, so "call raise-hand").
+ */
+export function parseHelpCommands(text: string | null | undefined, prefix = ''): string[] {
+    const names: string[] = [];
+    let inList = false;
+    for (const line of (text ?? '').split('\n')) {
+        if (/^(Available|Deprecated) Commands:/.test(line)) {
+            inList = true;
+            continue;
+        }
+        if (!line.trim()) {
+            inList = false;
+            continue;
+        }
+        const m = inList && line.match(/^\s+(\S+)/);
+        if (m && m[1] !== 'help' && m[1] !== 'completion')
+            names.push(prefix + m[1]);
+    }
+    return names;
+}
 
 export interface Shortcut {
     key: string;

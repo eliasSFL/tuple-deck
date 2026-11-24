@@ -31,7 +31,7 @@ and a crossed-out microphone when you are muted.
 | Idle | Start a call in your room, Join a link from the clipboard |
 | Incoming call | Who's calling + Answer (also as a notification with an Answer button) |
 | Calling someone | Ringing status + Cancel |
-| In a call | Title and timer, Mute, Share my screen, Control their screen, Participants (remove), Reactions & more (air horn / sad trombone / flute, screenshot of the shared screen, transcript capture), Leave |
+| In a call | Title and timer, Mute, Share my screen, Share my webcam (opens Tuple's camera picker; ■ stops sharing), Control their screen, Participants (remove), Reactions & more (sounds, emoji and animations, raise hand, screenshot of the shared screen, transcript capture), Leave |
 | Always | Your name and account in the header, Live calls (calls your teammates are on that you can join, or "No live calls"), Contacts (presence dot, ⭐ favourite, click to call, or to add to the current call, remove for contacts outside your team, invite someone by email), Rooms (join, copy link, ⭐, create team room), Recent calls (opens a Markdown export, delete, plus full-text search), your other machines, update banner, Settings, Stop Tuple, Log out |
 
 **Notices posted into the call:** when an agent or integration posts a notice or
@@ -54,6 +54,8 @@ command and a debug log.
 - The `tuple` CLI, v2026_10_21.0 or newer, logged in. GNOME Shell's PATH usually
   leaves out `~/.local/bin`, so the extension also looks in `~/.local/bin` and
   `$XDG_BIN_HOME`. You can also set an explicit path in Settings.
+  Webcam, raise hand and the emoji / animation reactions need v2026_11_19.0;
+  on older versions those items are hidden.
 - `curl` and `sha256sum` for the "Update Tuple" item (see below).
 
 ## Install
@@ -95,7 +97,9 @@ leave it empty for the bundled one.
 | Need | CLI |
 |---|---|
 | Live state | `tuple --format json state follow`, `contacts follow`, `rooms follow`: long-running, one JSON snapshot per line, restarted with backoff if Tuple stops. `notifications follow` runs the same way, only while you're in a call |
-| Calls | `call start / accept / join / leave / mute / unmute / react`, `call participants add / remove`, `call list --joinable` (read when the menu opens) |
+| Calls | `call start / accept / join / leave / mute / unmute / react / raise-hand / lower-hand`, `call participants add / remove`, `call list --joinable` (read when the menu opens) |
+| Webcam | `webcam start` (opens the camera picker), `webcam stop` |
+| What the CLI offers | `--help` and `call --help` (which commands exist), `call react --help` (which reactions exist), read at startup and on reconnect |
 | Rooms, contacts | `rooms join / create / favorite / unfavorite`, `contacts favorite / unfavorite / invite / remove` |
 | History | `capture list / search / export --as markdown / delete`, `capture start / stop` |
 | Screen | `screen -o ~/Pictures/Tuple/…` |
@@ -119,7 +123,11 @@ Known gaps:
 - Remove is offered only for contacts outside your team (`kind` other than
   `teammate`), assuming teammates come from the team and can't be removed.
 - Mute, share and capture switches use the call payload when it includes that
-  state and otherwise fall back to remembering what you last clicked.
+  state and otherwise fall back to remembering what you last clicked. Raise
+  hand always remembers, as the CLI doesn't report it.
+- The CLI doesn't report whether your webcam is on, and `webcam start` only
+  opens Tuple's picker (you share from its Share Webcam button), so the menu
+  has a "Share my webcam…" item with a stop button instead of a switch.
 - Call history needs Tuple's capture store, which needs a transcription model.
   Without one the submenu explains that instead of listing calls.
 

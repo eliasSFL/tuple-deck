@@ -8,17 +8,16 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 import {
-    ContactItem, HeaderItem, HistoryItem, LiveCallItem, ParticipantItem, RoomItem, syncItems,
+    ContactItem, HeaderItem, HistoryItem, LiveCallItem, ParticipantItem, ReactionRowItem, RoomItem,
+    WebcamItem, syncItems,
 } from './menuItems.js';
 import {
-    type Call, type Id, type Machine, type OngoingCall, type Reaction, type TupleState,
-    REACTIONS, Status, callStartedAt, callTitle, callerName, formatDuration, isOnline,
-    isSelfSharing, participantsOf, selfMuted, sharerId, sortContacts, sortRooms,
+    type Call, type Id, type Machine, type OngoingCall, type Reactions, type TupleState,
+    Status, callStartedAt, callTitle, callerName, formatDuration, isOnline,
+    isSelfSharing, participantsOf, reactionLabel, selfMuted, sharerId, sortContacts, sortRooms,
 } from './model.js';
 import type {Actions} from './actions.js';
 import type {TupleStore} from './store.js';
-
-const REACTION_LABELS: Record<Reaction, string> = {airhorn: 'Air horn', trombone: 'Sad trombone', flute: 'Flute'};
 
 type LabelItem = PopupMenu.PopupMenuItem | PopupMenu.PopupImageMenuItem;
 type Showable = Clutter.Actor | PopupMenu.PopupMenuSection;
@@ -49,6 +48,8 @@ export class TupleIndicator extends PanelMenu.Button {
     private _mutedGuess: boolean;
     private _sharingGuess: boolean;
     private _capturingGuess: boolean;
+    private _handGuess: boolean;
+    private _reactionsKey: string | null;
     private _guestMode: string | null;
     private _contactItems: Map<string, ContactItem>;
     private _roomItems: Map<string, RoomItem>;
@@ -78,6 +79,9 @@ export class TupleIndicator extends PanelMenu.Button {
     private _muteSwitch!: PopupMenu.PopupSwitchMenuItem;
     private _shareSwitch!: PopupMenu.PopupSwitchMenuItem;
     private _controlSwitch!: PopupMenu.PopupSwitchMenuItem;
+    private _webcamItem!: WebcamItem;
+    private _handSwitch!: PopupMenu.PopupSwitchMenuItem;
+    private _reactionsSection!: PopupMenu.PopupMenuSection;
     private _captureSwitch!: PopupMenu.PopupSwitchMenuItem;
     private _participantsSub!: PopupMenu.PopupSubMenuMenuItem;
     private _moreSub!: PopupMenu.PopupSubMenuMenuItem;
@@ -109,6 +113,8 @@ export class TupleIndicator extends PanelMenu.Button {
         this._mutedGuess = false;
         this._sharingGuess = false;
         this._capturingGuess = false;
+        this._handGuess = false;
+        this._reactionsKey = null;
         this._guestMode = null;
         this._contactItems = new Map();
         this._roomItems = new Map();
@@ -259,6 +265,15 @@ export class TupleIndicator extends PanelMenu.Button {
         });
         section.addMenuItem(this._shareSwitch);
 
+        this._webcamItem = new WebcamItem({
+            onOpenPicker: () => this._actions.openWebcamPicker(),
+            onStop: () => {
+                this.menu.close();
+                this._actions.stopWebcam();
+            },
+        });
+        section.addMenuItem(this._webcamItem);
+
         this._controlSwitch = new PopupMenu.PopupSwitchMenuItem('Control their screen', false);
         this._controlSwitch.connect('toggled', async (_item, state) => {
             const mode = state ? 'control' : 'annotation';
@@ -276,9 +291,21 @@ export class TupleIndicator extends PanelMenu.Button {
         // short enough for a laptop screen.
         this._moreSub = new PopupMenu.PopupSubMenuMenuItem('Reactions & more', true);
         this._moreSub.icon!.icon_name = 'face-smile-big-symbolic';
-        for (const sound of REACTIONS)
-            this._moreSub.menu.addMenuItem(this._item(REACTION_LABELS[sound] ?? sound, () => this._actions.react(sound)));
+        // Filled from `tuple call react --help` by _syncReactions().
+        this._reactionsSection = new PopupMenu.PopupMenuSection();
+        this._moreSub.menu.addMenuItem(this._reactionsSection);
         this._moreSub.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        // The CLI doesn't report a raised hand, so this remembers what you clicked.
+        this._handSwitch = new PopupMenu.PopupSwitchMenuItem('Raise hand', false);
+        this._handSwitch.connect('toggled', async (_item, state) => {
+            this._handGuess = state;
+            const result = await this._actions.setHandRaised(state);
+            if (!result.ok) {
+                this._handGuess = !state;
+                this._sync();
+            }
+        });
+        this._moreSub.menu.addMenuItem(this._handSwitch);
         this._snapshotItem = this._item('Save screenshot of shared screen',
             () => this._actions.snapshot(), 'camera-photo-symbolic');
         this._moreSub.menu.addMenuItem(this._snapshotItem);
@@ -416,6 +443,7 @@ export class TupleIndicator extends PanelMenu.Button {
             this._mutedGuess = false;
             this._sharingGuess = false;
             this._capturingGuess = false;
+            this._handGuess = false;
         }
 
         // `call list` may include the call you are already on.
@@ -517,10 +545,14 @@ export class TupleIndicator extends PanelMenu.Button {
 
         const captureKnown = call && typeof (call.transcribing ?? call.recorded) === 'boolean';
         this._captureSwitch.setToggleState(captureKnown ? !!(call.transcribing ?? call.recorded) : this._capturingGuess);
+        this._handSwitch.setToggleState(this._handGuess);
+        this._syncReactions(this._store.reactions);
 
         setVisible(
             this._muteSwitch, !outgoing,
             this._shareSwitch, !outgoing && this._store.has('share'),
+            this._webcamItem, !outgoing && this._store.has('webcam'),
+            this._handSwitch, !outgoing && this._store.has('call raise-hand') && this._store.has('call lower-hand'),
             this._controlSwitch, !outgoing && this._guestMode !== null && someoneElseSharing,
             this._captureSwitch, !outgoing && this._store.has('capture'),
             this._participantsSub, !outgoing && participants.length,
@@ -534,6 +566,24 @@ export class TupleIndicator extends PanelMenu.Button {
             create: () => new ParticipantItem({onRemove: p => this._actions.removeParticipant(p)}),
             update: (item, p) => item.update(p),
         });
+    }
+
+    /** Rebuilds the reaction rows (sounds, emoji, animations) when the CLI's list changes. */
+    private _syncReactions(reactions: Reactions) {
+        const key = JSON.stringify(reactions);
+        if (key === this._reactionsKey)
+            return;
+        this._reactionsKey = key;
+        const section = this._reactionsSection;
+        section.removeAll();
+        const react = (name: string) => this._actions.react(name);
+        const row = (names: string[], emoji = false) => {
+            if (names.length)
+                section.addMenuItem(new ReactionRowItem(names.map(name => ({name, label: reactionLabel(name)})), react, {emoji}));
+        };
+        row(reactions.sounds);
+        row(reactions.emoji, true);
+        row(reactions.animations);
     }
 
     private _callSubtitle(call: Call | null): string {

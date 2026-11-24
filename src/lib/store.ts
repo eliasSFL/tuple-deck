@@ -19,8 +19,8 @@ import * as Signals from 'resource:///org/gnome/shell/misc/signals.js';
 
 import {Follower, type TupleCli} from './cli.js';
 import {
-    type Call, type Card, type Contact, type Id, type Json, type Person, type Room, type TupleState,
-    Status, callPhase, deriveStatus, isOnline, notificationCards,
+    type Call, type Card, type Contact, type Id, type Json, type Person, type Reactions, type Room,
+    type TupleState, DEFAULT_REACTIONS, Status, callPhase, deriveStatus, isOnline, notificationCards,
 } from './model.js';
 
 type StoreSignals = {
@@ -39,6 +39,7 @@ export class TupleStore extends Signals.EventEmitter<StoreSignals> {
     daemonUp: boolean;
     error: string;
     commands: Set<string>;
+    reactions: Reactions;
     /** `tuple whoami`, for the full name `state` leaves out. */
     identity: Person | null;
 
@@ -67,6 +68,7 @@ export class TupleStore extends Signals.EventEmitter<StoreSignals> {
         this.daemonUp = false;
         this.error = '';
         this.commands = new Set();
+        this.reactions = {...DEFAULT_REACTIONS};
         this.identity = null;
         this._identityFor = null;
         this._incomingId = null;
@@ -112,7 +114,7 @@ export class TupleStore extends Signals.EventEmitter<StoreSignals> {
 
     async refreshCommands(): Promise<void> {
         try {
-            this.commands = await this._cli.commands();
+            [this.commands, this.reactions] = await Promise.all([this._cli.commands(), this._cli.reactions()]);
         } catch (e) {
             logError(e as object, 'tuple-deck: reading tuple --help');
         }

@@ -3,8 +3,9 @@ import System from 'system';
 
 import {
     Status, callPhase, callTitle, callerName, captureCalls, deriveStatus, firstUrl,
-    formatDuration, joinNames, notificationCards, ongoingCallLabel, ongoingCalls, parseSettings,
-    participantsOf, roomLabel, searchHits, selfMuted, sortContacts,
+    DEFAULT_REACTIONS, formatDuration, joinNames, notificationCards, ongoingCallLabel, ongoingCalls,
+    parseHelpCommands, parseReactions, parseSettings, participantsOf, reactionLabel, roomLabel, searchHits,
+    selfMuted, sortContacts,
 } from '../build/lib/model.js';
 import {cleanError} from '../build/lib/cli.js';
 
@@ -79,13 +80,65 @@ const settingsText = [
     'capture | auto | Screen capture mechanism (auto|x11|portal)',
     'guest-mode | annotation | Current mode in screen window (annotation|control)',
     'transcription-model |  | File path to whisper ggml model',
+    'webcam |  | Webcam device last picked',
 ].join('\n');
 eq(parseSettings(settingsText).map(s => [s.name, s.value, s.kind, s.options]), [
     ['overlay', '1', 'bool', ['0', '1']],
     ['capture', 'auto', 'choice', ['auto', 'x11', 'portal']],
     ['guest-mode', 'annotation', 'choice', ['annotation', 'control']],
     ['transcription-model', '', 'text', null],
+    ['webcam', '', 'text', null],
 ], 'settings parsed');
+
+// -- help text (real v2026_11_19.0 output) ----------------------------------------------
+const reactHelp = [
+    'Send a reaction to everyone on the call.',
+    '',
+    'Sounds play for everyone, yourself included: airhorn, trombone, flute.',
+    'Emoji show on your webcam tile: thumbs-up, plus-one, thumbs-down, clap, laugh, heart, tada, wow.',
+    'Animations play on your webcam tile: ship-it, table-flip, this-is-fine.',
+    '',
+    'Usage:',
+    '  tuple call react <reaction> [flags]',
+    '',
+    'Flags:',
+    '      --call string   call ID (default "current")',
+    '  -h, --help          help for react',
+    '',
+    'Global Flags:',
+    '      --format format   output format: "text" or "json" (default text)',
+].join('\n');
+eq(parseReactions(reactHelp), {
+    sounds: ['airhorn', 'trombone', 'flute'],
+    emoji: ['thumbs-up', 'plus-one', 'thumbs-down', 'clap', 'laugh', 'heart', 'tada', 'wow'],
+    animations: ['ship-it', 'table-flip', 'this-is-fine'],
+}, 'reactions from call react --help');
+eq(parseReactions('Send a reaction.\n\nUsage:\n  tuple call react <reaction> [flags]\n'), DEFAULT_REACTIONS,
+    'reactions: older help without lists -> sounds only');
+eq(parseReactions(''), DEFAULT_REACTIONS, 'reactions: no help');
+eq([reactionLabel('trombone'), reactionLabel('tada'), reactionLabel('table-flip'), reactionLabel('mind_blown')],
+    ['Sad trombone', '🎉', 'Table flip', 'Mind blown'], 'reaction labels');
+
+const callHelp = [
+    'Call lifecycle',
+    '',
+    'Usage:',
+    '  tuple call [flags]',
+    '  tuple call [command]',
+    '',
+    'Available Commands:',
+    '  accept       Accept an incoming call',
+    '  lower-hand   Lower your raised hand',
+    '  raise-hand   Raise your hand on your webcam tile',
+    '  react        Send a reaction',
+    '',
+    'Flags:',
+    '  -h, --help   help for call',
+].join('\n');
+eq(parseHelpCommands(callHelp, 'call '), ['call accept', 'call lower-hand', 'call raise-hand', 'call react'],
+    'call subcommands');
+eq(parseHelpCommands('Available Commands:\n  help   Help\n  webcam  Cams\n\nDeprecated Commands:\n  share  Share\n'),
+    ['webcam', 'share'], 'top-level commands, deprecated included, help left out');
 
 // -- history ---------------------------------------------------------------------
 eq(captureCalls([{call_id: 'abc', participants: [ada], started_at: '2026-10-20T10:00:00Z'}]).map(c => [c.id, c.title]),

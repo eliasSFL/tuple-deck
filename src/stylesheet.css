@@ -63,6 +63,26 @@
   background-color: rgba(127, 127, 127, 0.25);
 }
 
+.tuple-deck-reaction-row {
+  spacing: 2px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.tuple-deck-reaction-button {
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.tuple-deck-reaction-button.emoji {
+  font-size: 1.2em;
+}
+
+.tuple-deck-reaction-button:hover,
+.tuple-deck-reaction-button:focus {
+  background-color: rgba(127, 127, 127, 0.25);
+}
+
 .tuple-deck-destructive {
   color: #ff7b63;
 }

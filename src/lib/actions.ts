@@ -9,7 +9,7 @@ import {EXIT_CALL_UNANSWERED, type RunResult, type TupleCli, findProgram} from '
 import {confirm, openSearchDialog, promptLoginCode, promptText} from './dialogs.js';
 import {
     type CallMember, type CaptureCall, type Contact, type Id, type Machine, type OngoingCall,
-    type Reaction, type Room, type TupleSetting,
+    type Room, type TupleSetting,
     Status, captureCalls, contactRef, firstUrl, machinesOf, ongoingCallLabel, ongoingCalls,
     parseSettings, personName, personalRoom, roomLabel, searchHits,
 } from './model.js';
@@ -212,8 +212,23 @@ export class Actions {
         return this._do(['call', muted ? 'mute' : 'unmute'], {label: muted ? 'Muting' : 'Unmuting'});
     }
 
-    react(sound: Reaction): Promise<RunResult> {
-        return this._do(['call', 'react', sound], {label: 'Reaction'});
+    react(reaction: string): Promise<RunResult> {
+        return this._do(['call', 'react', reaction], {label: 'Reaction'});
+    }
+
+    setHandRaised(raised: boolean): Promise<RunResult> {
+        return this._do(['call', raised ? 'raise-hand' : 'lower-hand'], {
+            label: raised ? 'Raising your hand' : 'Lowering your hand',
+        });
+    }
+
+    /** Opens Tuple's camera picker; sharing starts from its Share Webcam button. */
+    openWebcamPicker(): Promise<RunResult> {
+        return this._do(['webcam', 'start'], {label: 'Opening the camera picker'});
+    }
+
+    stopWebcam(): Promise<RunResult> {
+        return this._do(['webcam', 'stop'], {label: 'Stopping your webcam'});
     }
 
     addParticipant(contact: Contact): Promise<RunResult> {

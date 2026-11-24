@@ -30,7 +30,7 @@ cleanup() {
             kill "$(cut -d/ -f3 <<<"$env")" 2>/dev/null
     done
     # xdg-document-portal leaves a FUSE mount in the runtime dir.
-    fusermount3 -uz "$SB/runtime/doc" 2>/dev/null
+    fusermount3 -uz "$SB/runtime/doc" 2>/dev/null || true
     rm -rf "$SB"
 }
 trap cleanup EXIT

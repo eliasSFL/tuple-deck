@@ -328,3 +328,60 @@ export class HistoryItem extends PopupMenu.PopupBaseMenuItem {
         this.connect('activate', () => onActivate(this.call));
     }
 }
+
+/**
+ * "Share my webcam…" opens Tuple's camera picker (sharing starts from its
+ * Share Webcam button); the trailing button stops sharing. The CLI doesn't
+ * report whether your webcam is on, so this is a row with a button, not a switch.
+ */
+export class WebcamItem extends PopupMenu.PopupBaseMenuItem {
+    static {
+        GObject.registerClass(this);
+    }
+
+    _stop: St.Button;
+
+    constructor({onOpenPicker, onStop}: {onOpenPicker: () => void, onStop: () => void}) {
+        super();
+        this.add_child(new St.Icon({icon_name: 'camera-web-symbolic', style_class: 'popup-menu-icon'}));
+        const label = new St.Label({text: 'Share my webcam…', x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        this.add_child(label);
+        this.label_actor = label;
+        this._stop = iconButton('media-playback-stop-symbolic', 'Stop sharing my webcam', onStop);
+        this.add_child(this._stop);
+        this.connect('activate', () => onOpenPicker());
+    }
+}
+
+/**
+ * One row of reaction buttons (all the sounds, all the emoji, or all the
+ * animations), so a whole group takes a single menu line.
+ */
+export class ReactionRowItem extends PopupMenu.PopupBaseMenuItem {
+    static {
+        GObject.registerClass(this);
+    }
+
+    _buttons: Map<string, St.Button>;
+
+    constructor(reactions: {name: string, label: string}[], onReact: (name: string) => void, {emoji = false} = {}) {
+        super({activate: false, can_focus: false, style_class: 'tuple-deck-reaction-row'});
+        this._buttons = new Map();
+        for (const {name, label} of reactions) {
+            const button = new St.Button({
+                label,
+                style_class: emoji ? 'tuple-deck-reaction-button emoji' : 'tuple-deck-reaction-button',
+                can_focus: true,
+                accessible_name: name.replace(/-/g, ' '),
+                x_expand: true,
+            });
+            button.connect('clicked', () => {
+                onReact(name);
+                // Closes the menu, like clicking any other item.
+                this.activate(Clutter.get_current_event());
+            });
+            this._buttons.set(name, button);
+            this.add_child(button);
+        }
+    }
+}

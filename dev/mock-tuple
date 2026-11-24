@@ -31,6 +31,7 @@ Available Commands:
   state         Show current application state
   stop          Stop the daemon
   version       Print the app version
+  webcam        List cameras, open the camera picker to share your webcam, and stop sharing it
   whoami        Print the authenticated user's identity
 
 Deprecated Commands:
@@ -43,11 +44,44 @@ Flags:
       --format format   output format: "text" or "json" (default text)
 """
 
+CALL_HELP = """Call lifecycle
+
+Usage:
+  tuple call [command]
+
+Available Commands:
+  accept       Accept an incoming call
+  join         Join a call by person name or room URL
+  leave        Leave the current call
+  list         List ongoing calls
+  lower-hand   Lower your raised hand
+  mute         Mute your microphone
+  participants Manage call participants
+  raise-hand   Raise your hand on your webcam tile
+  react        Send a reaction
+  start        Start a call with someone or a machine ID from "machines list"
+  unmute       Unmute your microphone
+
+Flags:
+  -h, --help   help for call
+"""
+
+REACT_HELP = """Send a reaction to everyone on the call.
+
+Sounds play for everyone, yourself included: airhorn, trombone, flute.
+Emoji show on your webcam tile: thumbs-up, plus-one, thumbs-down, clap, laugh, heart, tada, wow.
+Animations play on your webcam tile: ship-it, table-flip, this-is-fine.
+
+Usage:
+  tuple call react <reaction> [flags]
+"""
+
 SETTINGS = """overlay | 1 | Show "overlay" annotation window when sharing screen (0|1)
 start-calls-muted | 0 | Start with microphone muted when joining a call (0|1)
 capture | portal | Screen capture mechanism (auto|x11|portal)
 guest-mode | annotation | Current mode in screen window (annotation|control)
-transcription-model |  | File path to whisper ggml model"""
+transcription-model |  | File path to whisper ggml model
+webcam |  | Webcam device last picked"""
 
 
 def path(name):
@@ -80,7 +114,7 @@ def main():
         i = args.index("--format")
         args = args[:i] + args[i + 2:]
 
-    if read("down.flag") is not None and args[:1] != ["--help"] and args != ["start"]:
+    if read("down.flag") is not None and args[-1:] != ["--help"] and args != ["start"]:
         print('{"error":"The Tuple app is not reachable"}')
         sys.exit(1)
 
@@ -89,6 +123,10 @@ def main():
 
     if args in (["--help"], []):
         print(HELP)
+    elif args == ["call", "--help"]:
+        print(CALL_HELP)
+    elif args == ["call", "react", "--help"]:
+        print(REACT_HELP)
     elif args == ["state", "follow"]:
         follow("state.json")
     elif args == ["contacts", "follow"]:
@@ -107,7 +145,7 @@ def main():
     elif args == ["settings"]:
         print(SETTINGS)
     elif args == ["version"]:
-        print("v2026_10_21.0")
+        print("v2026_11_19.0")
     elif args[:2] == ["machines", "list"]:
         print(read("machines.json", "[]"))
     elif args[:2] == ["capture", "list"]:
