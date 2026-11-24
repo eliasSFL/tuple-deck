@@ -330,30 +330,6 @@ export class HistoryItem extends PopupMenu.PopupBaseMenuItem {
 }
 
 /**
- * "Share my webcam…" opens Tuple's camera picker (sharing starts from its
- * Share Webcam button); the trailing button stops sharing. The CLI doesn't
- * report whether your webcam is on, so this is a row with a button, not a switch.
- */
-export class WebcamItem extends PopupMenu.PopupBaseMenuItem {
-    static {
-        GObject.registerClass(this);
-    }
-
-    _stop: St.Button;
-
-    constructor({onOpenPicker, onStop}: {onOpenPicker: () => void, onStop: () => void}) {
-        super();
-        this.add_child(new St.Icon({icon_name: 'camera-web-symbolic', style_class: 'popup-menu-icon'}));
-        const label = new St.Label({text: 'Share my webcam…', x_expand: true, y_align: Clutter.ActorAlign.CENTER});
-        this.add_child(label);
-        this.label_actor = label;
-        this._stop = iconButton('media-playback-stop-symbolic', 'Stop sharing my webcam', onStop);
-        this.add_child(this._stop);
-        this.connect('activate', () => onOpenPicker());
-    }
-}
-
-/**
  * One row of reaction buttons (all the sounds, all the emoji, or all the
  * animations), so a whole group takes a single menu line.
  */

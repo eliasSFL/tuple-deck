@@ -222,13 +222,11 @@ export class Actions {
         });
     }
 
-    /** Opens Tuple's camera picker; sharing starts from its Share Webcam button. */
-    openWebcamPicker(): Promise<RunResult> {
-        return this._do(['webcam', 'start'], {label: 'Opening the camera picker'});
-    }
-
-    stopWebcam(): Promise<RunResult> {
-        return this._do(['webcam', 'stop'], {label: 'Stopping your webcam'});
+    /** On opens Tuple's camera picker (sharing starts from its Share Webcam button); off stops sharing. */
+    setWebcam(on: boolean): Promise<RunResult> {
+        return this._do(['webcam', on ? 'start' : 'stop'], {
+            label: on ? 'Opening the camera picker' : 'Stopping your webcam',
+        });
     }
 
     addParticipant(contact: Contact): Promise<RunResult> {

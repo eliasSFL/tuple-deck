@@ -4,6 +4,8 @@
 //   tuple --format json rooms follow     -> full room list snapshots
 // plus, only while in a call (the command errors outside one):
 //   tuple --format json notifications follow -> cards posted into the call
+// and the daemon's log, for whether you're sharing your screen or webcam
+// (the CLI doesn't say; see tupleLog.ts).
 //
 // Signals:
 //   'changed'                      anything changed; read the getters
@@ -18,8 +20,9 @@ import Gio from 'gi://Gio';
 import * as Signals from 'resource:///org/gnome/shell/misc/signals.js';
 
 import {Follower, type TupleCli} from './cli.js';
+import {TupleLogWatcher} from './tupleLog.js';
 import {
-    type Call, type Card, type Contact, type Id, type Json, type Person, type Reactions, type Room,
+    type Call, type Card, type Contact, type Id, type Json, type MediaState, type Person, type Reactions, type Room,
     type TupleState, DEFAULT_REACTIONS, Status, callPhase, deriveStatus, isOnline, notificationCards,
 } from './model.js';
 
@@ -57,6 +60,7 @@ export class TupleStore extends Signals.EventEmitter<StoreSignals> {
     private _roomsFollower: Follower;
     private _followers: Follower[];
     private _cardsFollower: Follower;
+    private _log: TupleLogWatcher;
 
     constructor(cli: TupleCli, settings: Gio.Settings) {
         super();
@@ -92,16 +96,24 @@ export class TupleStore extends Signals.EventEmitter<StoreSignals> {
         this._cardsFollower = new Follower(cli, ['notifications', 'follow'], {
             onData: data => this._onCards(data),
         });
+        this._log = new TupleLogWatcher(() => this.emit('changed'));
+    }
+
+    /** Whether you're sharing your screen / webcam, or null when Tuple's log hasn't said. */
+    get media(): MediaState | null {
+        return this._log.state;
     }
 
     start() {
         this._followers.forEach(f => f.start());
+        this._log.start();
         this.refreshCommands();
     }
 
     destroy() {
         this._followers.forEach(f => f.stop());
         this._cardsFollower.stop();
+        this._log.stop();
         this.disconnectAll();
     }
 
@@ -109,6 +121,7 @@ export class TupleStore extends Signals.EventEmitter<StoreSignals> {
     reconnect() {
         this._followers.forEach(f => f.restartNow());
         this._cardsFollower.restartNow();
+        this._log.start();
         this.refreshCommands();
     }
 
@@ -144,6 +157,9 @@ export class TupleStore extends Signals.EventEmitter<StoreSignals> {
     }
 
     private _onDaemonStatus(up: boolean, error: string) {
+        // A daemon (re)started: it may write a new log, or the first one.
+        if (up && !this.daemonUp)
+            this._log.start();
         this.daemonUp = up;
         this.error = error;
         if (!up) {

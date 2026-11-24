@@ -13,7 +13,9 @@ This replaces [tuple-panel](https://github.com/eliasSFL/tuple-panel), a GTK4 app
 built against the pre-October-2026 CLI. That CLI had no status command, so the
 panel tailed Tuple's log file and typed into the interactive `tuple call` picker.
 The current CLI (v2026_10_21.0+) has JSON output and live `follow` streams, so
-the extension reads state straight from the CLI instead of guessing.
+the extension reads state straight from the CLI instead of guessing. The one
+exception is whether you're sharing your screen or webcam, which the CLI
+doesn't report; see *Known gaps*.
 
 ## What it does
 
@@ -31,7 +33,7 @@ and a crossed-out microphone when you are muted.
 | Idle | Start a call in your room, Join a link from the clipboard |
 | Incoming call | Who's calling + Answer (also as a notification with an Answer button) |
 | Calling someone | Ringing status + Cancel |
-| In a call | Title and timer, Mute, Share my screen, Share my webcam (opens Tuple's camera picker; ■ stops sharing), Control their screen, Participants (remove), Reactions & more (sounds, emoji and animations, raise hand, screenshot of the shared screen, transcript capture), Leave |
+| In a call | Title and timer, Mute, Share my screen, Share my webcam (opens Tuple's camera picker), Control their screen, Participants (remove), Reactions & more (sounds, emoji and animations, raise hand, screenshot of the shared screen, transcript capture), Leave |
 | Always | Your name and account in the header, Live calls (calls your teammates are on that you can join, or "No live calls"), Contacts (presence dot, ⭐ favourite, click to call, or to add to the current call, remove for contacts outside your team, invite someone by email), Rooms (join, copy link, ⭐, create team room), Recent calls (opens a Markdown export, delete, plus full-text search), your other machines, update banner, Settings, Stop Tuple, Log out |
 
 **Notices posted into the call:** when an agent or integration posts a notice or
@@ -99,6 +101,7 @@ leave it empty for the bundled one.
 | Live state | `tuple --format json state follow`, `contacts follow`, `rooms follow`: long-running, one JSON snapshot per line, restarted with backoff if Tuple stops. `notifications follow` runs the same way, only while you're in a call |
 | Calls | `call start / accept / join / leave / mute / unmute / react / raise-hand / lower-hand`, `call participants add / remove`, `call list --joinable` (read when the menu opens) |
 | Webcam | `webcam start` (opens the camera picker), `webcam stop` |
+| Sharing state | Read-only watch of the daemon's log, `$XDG_DATA_HOME/tuple/<n>/log.txt`, for the lines that say screen or webcam sharing started or stopped |
 | What the CLI offers | `--help` and `call --help` (which commands exist), `call react --help` (which reactions exist), read at startup and on reconnect |
 | Rooms, contacts | `rooms join / create / favorite / unfavorite`, `contacts favorite / unfavorite / invite / remove` |
 | History | `capture list / search / export --as markdown / delete`, `capture start / stop` |
@@ -122,12 +125,17 @@ Known gaps:
   the notification says so instead of showing buttons.
 - Remove is offered only for contacts outside your team (`kind` other than
   `teammate`), assuming teammates come from the team and can't be removed.
-- Mute, share and capture switches use the call payload when it includes that
-  state and otherwise fall back to remembering what you last clicked. Raise
-  hand always remembers, as the CLI doesn't report it.
-- The CLI doesn't report whether your webcam is on, and `webcam start` only
-  opens Tuple's picker (you share from its Share Webcam button), so the menu
-  has a "Share my webcam…" item with a stop button instead of a switch.
+- **Sharing state comes from Tuple's log.** The CLI doesn't say whether you're
+  sharing your screen or webcam (`state` has no sharer or webcam field, even
+  while you share), but the daemon logs when either starts or stops, however
+  it happened: from the menu, Tuple's own window, or GNOME's screen-share
+  stop button. The two switches follow those lines, so a cancelled picker or
+  a share stopped elsewhere shows correctly. The log isn't a documented
+  interface; if it can't be found or stops matching, the switches fall back
+  to remembering what you last clicked.
+- Mute and capture switches use the call payload (`muted`, `transcribing`)
+  and fall back to remembering what you last clicked. Raise hand always
+  remembers, as nothing reports it.
 - Call history needs Tuple's capture store, which needs a transcription model.
   Without one the submenu explains that instead of listing calls.
 
@@ -139,6 +147,7 @@ src/                    the extension, in TypeScript
   prefs.ts              Adw preferences window
   lib/cli.ts            TupleCli (one-shot commands) + Follower (JSON line streams)
   lib/store.ts          live state from the follow streams; incoming/presence/card events
+  lib/tupleLog.ts       watches Tuple's daemon log for screen / webcam sharing
   lib/model.ts          Tuple's JSON types + pure helpers: status, normalizers (unit tested)
   lib/actions.ts        every menu action as a CLI call, errors → notifications
   lib/indicator.ts      the panel button and menu

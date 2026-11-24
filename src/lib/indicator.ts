@@ -9,7 +9,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 import {
     ContactItem, HeaderItem, HistoryItem, LiveCallItem, ParticipantItem, ReactionRowItem, RoomItem,
-    WebcamItem, syncItems,
+    syncItems,
 } from './menuItems.js';
 import {
     type Call, type Id, type Machine, type OngoingCall, type Reactions, type TupleState,
@@ -47,6 +47,7 @@ export class TupleIndicator extends PanelMenu.Button {
     private _callKey: string | null;
     private _mutedGuess: boolean;
     private _sharingGuess: boolean;
+    private _webcamGuess: boolean;
     private _capturingGuess: boolean;
     private _handGuess: boolean;
     private _reactionsKey: string | null;
@@ -79,7 +80,7 @@ export class TupleIndicator extends PanelMenu.Button {
     private _muteSwitch!: PopupMenu.PopupSwitchMenuItem;
     private _shareSwitch!: PopupMenu.PopupSwitchMenuItem;
     private _controlSwitch!: PopupMenu.PopupSwitchMenuItem;
-    private _webcamItem!: WebcamItem;
+    private _webcamSwitch!: PopupMenu.PopupSwitchMenuItem;
     private _handSwitch!: PopupMenu.PopupSwitchMenuItem;
     private _reactionsSection!: PopupMenu.PopupMenuSection;
     private _captureSwitch!: PopupMenu.PopupSwitchMenuItem;
@@ -112,6 +113,7 @@ export class TupleIndicator extends PanelMenu.Button {
         this._callKey = null;
         this._mutedGuess = false;
         this._sharingGuess = false;
+        this._webcamGuess = false;
         this._capturingGuess = false;
         this._handGuess = false;
         this._reactionsKey = null;
@@ -254,25 +256,15 @@ export class TupleIndicator extends PanelMenu.Button {
         });
         section.addMenuItem(this._muteSwitch);
 
-        this._shareSwitch = new PopupMenu.PopupSwitchMenuItem('Share my screen', false);
-        this._shareSwitch.connect('toggled', async (_item, state) => {
-            this._sharingGuess = state;
-            const result = await this._actions.setSharing(state);
-            if (!result.ok) {
-                this._sharingGuess = !state;
-                this._sync();
-            }
-        });
+        // Turning these on only opens a picker (the portal's, or Tuple's camera
+        // picker), so the switches show what Tuple's log says is shared, not
+        // what was clicked; see TupleStore.media.
+        this._shareSwitch = this._mediaSwitch('Share my screen', on => this._actions.setSharing(on),
+            guess => (this._sharingGuess = guess));
         section.addMenuItem(this._shareSwitch);
-
-        this._webcamItem = new WebcamItem({
-            onOpenPicker: () => this._actions.openWebcamPicker(),
-            onStop: () => {
-                this.menu.close();
-                this._actions.stopWebcam();
-            },
-        });
-        section.addMenuItem(this._webcamItem);
+        this._webcamSwitch = this._mediaSwitch('Share my webcam', on => this._actions.setWebcam(on),
+            guess => (this._webcamGuess = guess));
+        section.addMenuItem(this._webcamSwitch);
 
         this._controlSwitch = new PopupMenu.PopupSwitchMenuItem('Control their screen', false);
         this._controlSwitch.connect('toggled', async (_item, state) => {
@@ -442,6 +434,7 @@ export class TupleIndicator extends PanelMenu.Button {
             this._localCallStart = callKey ? Date.now() : null;
             this._mutedGuess = false;
             this._sharingGuess = false;
+            this._webcamGuess = false;
             this._capturingGuess = false;
             this._handGuess = false;
         }
@@ -535,12 +528,13 @@ export class TupleIndicator extends PanelMenu.Button {
         const muted = selfMuted(call, selfId) ?? this._mutedGuess;
         this._muteSwitch.setToggleState(muted);
 
-        // Without a sharer field we can't tell who's sharing; fall back to
-        // what the switches last did and show everything.
+        // Tuple doesn't report who's sharing (state has no sharer field, even
+        // while you share), so offer the sharer-only items unless it ever does.
         const sharerKnown = call && 'sharer_user_id' in call;
-        const sharing = sharerKnown ? isSelfSharing(call, selfId) : this._sharingGuess;
-        const someoneElseSharing = sharerKnown ? sharerId(call) !== null && !sharing : true;
-        this._shareSwitch.setToggleState(sharing);
+        const someoneElseSharing = sharerKnown ? sharerId(call) !== null && !isSelfSharing(call, selfId) : true;
+        const media = this._store.media;
+        this._shareSwitch.setToggleState(media?.screen ?? this._sharingGuess);
+        this._webcamSwitch.setToggleState(media?.webcam ?? this._webcamGuess);
         this._controlSwitch.setToggleState(this._guestMode === 'control');
 
         const captureKnown = call && typeof (call.transcribing ?? call.recorded) === 'boolean';
@@ -551,7 +545,7 @@ export class TupleIndicator extends PanelMenu.Button {
         setVisible(
             this._muteSwitch, !outgoing,
             this._shareSwitch, !outgoing && this._store.has('share'),
-            this._webcamItem, !outgoing && this._store.has('webcam'),
+            this._webcamSwitch, !outgoing && this._store.has('webcam'),
             this._handSwitch, !outgoing && this._store.has('call raise-hand') && this._store.has('call lower-hand'),
             this._controlSwitch, !outgoing && this._guestMode !== null && someoneElseSharing,
             this._captureSwitch, !outgoing && this._store.has('capture'),
@@ -566,6 +560,25 @@ export class TupleIndicator extends PanelMenu.Button {
             create: () => new ParticipantItem({onRemove: p => this._actions.removeParticipant(p)}),
             update: (item, p) => item.update(p),
         });
+    }
+
+    /**
+     * A switch for sharing your screen or webcam. Clicking only starts the
+     * command (which opens a picker); afterwards the switch goes back to what
+     * Tuple's log reports, so a cancelled picker or a share stopped elsewhere
+     * shows correctly. Without the log it remembers the click instead.
+     */
+    private _mediaSwitch(label: string, run: (on: boolean) => Promise<{ok: boolean}>,
+        setGuess: (on: boolean) => void): PopupMenu.PopupSwitchMenuItem {
+        const item = new PopupMenu.PopupSwitchMenuItem(label, false);
+        item.connect('toggled', async (_item, state) => {
+            setGuess(state);
+            const result = await run(state);
+            if (!result.ok)
+                setGuess(!state);
+            this._sync();
+        });
+        return item;
     }
 
     /** Rebuilds the reaction rows (sounds, emoji, animations) when the CLI's list changes. */

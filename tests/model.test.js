@@ -3,7 +3,7 @@ import System from 'system';
 
 import {
     Status, callPhase, callTitle, callerName, captureCalls, deriveStatus, firstUrl,
-    DEFAULT_REACTIONS, formatDuration, joinNames, notificationCards, ongoingCallLabel, ongoingCalls,
+    DEFAULT_REACTIONS, applyMediaLog, formatDuration, joinNames, notificationCards, ongoingCallLabel, ongoingCalls,
     parseHelpCommands, parseReactions, parseSettings, participantsOf, reactionLabel, roomLabel, searchHits,
     selfMuted, sortContacts,
 } from '../build/lib/model.js';
@@ -139,6 +139,30 @@ eq(parseHelpCommands(callHelp, 'call '), ['call accept', 'call lower-hand', 'cal
     'call subcommands');
 eq(parseHelpCommands('Available Commands:\n  help   Help\n  webcam  Cams\n\nDeprecated Commands:\n  share  Share\n'),
     ['webcam', 'share'], 'top-level commands, deprecated included, help left out');
+
+// -- sharing state from Tuple's daemon log (real v2026_11_19.0 lines) ---------------------
+const off = {screen: false, webcam: false};
+const webcamOn = [
+    '05:34:08.453|4489|4489|info(webcam)|capturing camera serial 77',
+    '05:34:10.946|4489|4489|info|share webcam serial 77 id 1',
+    '05:34:10.946|4489|4500|info|Call.cpp:2407|OnWebcamCapturerStateChange: starting',
+    '05:34:10.961|4489|4500|info|Call.cpp:2407|OnWebcamCapturerStateChange: running',
+].join('\n');
+eq(applyMediaLog(off, webcamOn), {state: {screen: false, webcam: true}, matched: true}, 'log: webcam shared');
+eq(applyMediaLog(off, '05:34:08.453|4489|4489|info(webcam)|capturing camera serial 77\n'),
+    {state: off, matched: false}, 'log: picker preview alone is not sharing');
+eq(applyMediaLog({screen: false, webcam: true},
+    '05:34:14.712|4489|4500|info|Call.cpp:2407|OnWebcamCapturerStateChange: stopped\n').state,
+    off, 'log: webcam stopped');
+eq(applyMediaLog(off, [
+    '05:40:09.056|4489|4489|info|Call.cpp:2100|OnVideoCapturerDesktop Start',
+    '05:40:15.835|4489|4489|info|portal closed screencast session \'/org/freedesktop/portal/desktop/session/1_142/Session\'',
+    '05:40:15.835|4489|4489|info|Call.cpp:2150|OnVideoCapturerDesktop Stop lost=false',
+].join('\n')).state, off, 'log: screen started then stopped from GNOME, last line wins');
+eq(applyMediaLog(off, '05:40:09.056|4489|4489|info|Call.cpp:2100|OnVideoCapturerDesktop Start\n').state,
+    {screen: true, webcam: false}, 'log: screen shared');
+eq(applyMediaLog({screen: true, webcam: true}, 'launching from pid 4382...\n'),
+    {state: off, matched: true}, 'log: a new daemon resets sharing');
 
 // -- history ---------------------------------------------------------------------
 eq(captureCalls([{call_id: 'abc', participants: [ada], started_at: '2026-10-20T10:00:00Z'}]).map(c => [c.id, c.title]),

@@ -573,3 +573,41 @@ export function firstUrl(text: string | null | undefined): string | null {
     const m = (text ?? '').match(/https?:\/\/\S+/);
     return m ? m[0].replace(/[.,)]+$/, '') : null;
 }
+
+/** What you're sharing into the call, as far as Tuple's log has said. */
+export interface MediaState {
+    screen: boolean;
+    webcam: boolean;
+}
+
+// Tuple doesn't report sharing through the CLI (no sharer or webcam field in
+// `state`, even while you share), but its daemon log does, however sharing was
+// started or stopped (menu, Tuple's own window, GNOME's screen-share stop
+// button). These lines are not a documented interface, so they're matched
+// loosely and the menu falls back to remembering clicks if none ever show up.
+const MEDIA_MARKERS: Array<[RegExp, Partial<MediaState> | 'reset']> = [
+    [/^launching from pid\b/, 'reset'],                          // a new daemon started this log
+    [/\bOnVideoCapturerDesktop Start\b/, {screen: true}],
+    [/\bOnVideoCapturerDesktop Stop\b/, {screen: false}],
+    [/\bOnWebcamCapturerStateChange: running\b/, {webcam: true}],
+    [/\bOnWebcamCapturerStateChange: stopped\b/, {webcam: false}],
+];
+
+/**
+ * Applies the sharing changes in a chunk of Tuple's log to `state`, oldest
+ * first. Returns the new state and whether any line was recognised.
+ */
+export function applyMediaLog(state: MediaState, text: string): {state: MediaState, matched: boolean} {
+    let next = {...state};
+    let matched = false;
+    for (const line of text.split('\n')) {
+        for (const [re, change] of MEDIA_MARKERS) {
+            if (!re.test(line))
+                continue;
+            next = change === 'reset' ? {screen: false, webcam: false} : {...next, ...change};
+            matched = true;
+            break;
+        }
+    }
+    return {state: next, matched};
+}

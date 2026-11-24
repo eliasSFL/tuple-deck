@@ -8,6 +8,7 @@
 //   ["shot", "01-idle"]       screenshot to <out>/01-idle.png
 //   ["click", "<js expr>"]    click the centre of the actor the expression returns
 //   ["eval", "<js body>"]     async body with ctx helpers in scope; may return a value to log
+//                             (appendLog(line) writes to the fake Tuple daemon log)
 //   ["expect", "<regex>"]     assert that commands.log (since the last expect) matches
 
 import Clutter from 'gi://Clutter';
@@ -28,6 +29,14 @@ function wait(ms) {
         resolve();
         return GLib.SOURCE_REMOVE;
     }));
+}
+
+// Appends a line to the fake Tuple daemon log that dev/sandbox.sh creates.
+function appendLog(line) {
+    const path = GLib.build_filenamev([GLib.get_user_data_dir(), 'tuple', '0', 'log.txt']);
+    const stream = Gio.File.new_for_path(path).append_to(Gio.FileCreateFlags.NONE, null);
+    stream.write_all(new TextEncoder().encode(`${line}\n`), null);
+    stream.close(null);
 }
 
 function readText(path) {
@@ -160,6 +169,7 @@ export default class TestHelper extends Extension {
             GLib,
             wait,
             readText,
+            appendLog,
             indicator: () => this._indicator,
             deck: () => this._deck,
             click: a => this._click(a),
@@ -188,7 +198,7 @@ export default class TestHelper extends Extension {
             }
             case 'eval': {
                 // eslint-disable-next-line no-new-func
-                const fn = new Function('ctx', `const {indicator, deck, Main, wait, click, clickAt, keys, shot, readText, GLib, Clutter} = ctx;
+                const fn = new Function('ctx', `const {indicator, deck, Main, wait, click, clickAt, keys, shot, readText, appendLog, GLib, Clutter} = ctx;
                     return (async () => { ${arg} })();`);
                 const value = await fn(ctx);
                 if (value !== undefined)

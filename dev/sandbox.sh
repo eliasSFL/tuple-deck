@@ -54,6 +54,9 @@ for icon in "${XDG_DATA_HOME:-$HOME/.local/share}"/icons/hicolor/*/apps/tuple.pn
 done
 
 cp "$REPO"/dev/fixtures/common/*.json "$SB/mock/"
+# A fake Tuple daemon log, for the screen / webcam sharing switches.
+mkdir -p "$SB/data/tuple/0"
+echo "launching from pid 1..." > "$SB/data/tuple/0/log.txt"
 cp "$REPO/dev/fixtures/idle/state.json" "$SB/mock/"
 
 TUPLE_BIN="$REPO/dev/mock-tuple"
