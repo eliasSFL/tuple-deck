@@ -22,6 +22,7 @@ Available Commands:
   agent         Agent operating guidance and communication
   call          Call lifecycle
   capture       Capture and inspect call history
+  connect       Connect an AI agent to Tuple
   contacts      People and availability
   machines      List your other connected machines
   notifications External call notifications
@@ -51,6 +52,7 @@ Usage:
 
 Available Commands:
   accept       Accept an incoming call
+  edit         Edit a call's title or summary
   join         Join a call by person name or room URL
   leave        Leave the current call
   list         List ongoing calls
@@ -138,6 +140,17 @@ def main():
             print('{"error":"not in a call"}')
             return
         follow("notifications.json")
+    elif args[:2] == ["call", "show"]:
+        call = (json.loads(read("state.json", "{}")).get("call") or {})
+        if not call:
+            print('{"error":"not in a call"}')
+            sys.exit(1)
+        print(json.dumps({"id": call.get("call_id") or call.get("id"), "state": "active",
+                          "title": read("call-title.txt") or None, "summary": None}))
+    elif args[:2] == ["call", "edit"] and "--title" in args:
+        with open(path("call-title.txt"), "w") as f:
+            f.write(args[args.index("--title") + 1])
+        print("{}")
     elif args[:2] == ["call", "list"]:
         print(read("calls.json", "[]"))
     elif args == ["whoami"]:

@@ -235,6 +235,28 @@ export default class TupleDeckPreferences extends ExtensionPreferences {
         });
         paths.add(updateRow);
 
+        const terminalRow = new Adw.EntryRow({
+            title: 'Terminal command for AI agents (empty = automatic)',
+            show_apply_button: true,
+        });
+        terminalRow.text = settings.get_string('terminal-command');
+        terminalRow.connect('apply', () => {
+            const text = terminalRow.text.trim();
+            let ok = !text;
+            try {
+                const [, argv] = GLib.shell_parse_argv(text);
+                ok = !!argv?.[0] && !!findProgram(argv[0]);
+            } catch {}
+            terminalRow.remove_css_class('error');
+            if (!ok)
+                terminalRow.add_css_class('error');
+            settings.set_string('terminal-command', text);
+        });
+        terminalRow.set_tooltip_text('Opens a terminal running a command, which is appended: ' +
+            'e.g. "ptyxis --new-window --" or "alacritty -e". Empty uses GNOME\'s default terminal ' +
+            'or the first one installed.');
+        paths.add(terminalRow);
+
         const debug = new Adw.PreferencesGroup({title: 'Troubleshooting'});
         page.add(debug);
         const debugRow = new Adw.SwitchRow({

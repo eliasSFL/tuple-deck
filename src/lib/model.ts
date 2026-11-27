@@ -44,6 +44,7 @@ export interface Participant extends Person {
 
 export interface Call {
     id?: Id;
+    call_id?: Id;       // what `state` uses; `call show` uses id
     state?: string;
     title?: string;
     summary?: string;
@@ -382,7 +383,8 @@ function asList(data: Json, ...keys: string[]): Json[] {
 
 export interface CaptureCall {
     id: string;
-    title: string;
+    title: string;          // for display: the title, else summary or who was on it
+    realTitle: string;      // the title set on the call, '' if none
     people: string[];
     startedAt: number | null;
 }
@@ -394,6 +396,7 @@ export function captureCalls(data: Json): CaptureCall[] {
         return {
             id: String(c.call_id ?? c.id ?? ''),
             title: c.title || c.summary || (people.length ? joinNames(people) : 'Untitled call'),
+            realTitle: c.title ? String(c.title) : '',
             people,
             startedAt: Date.parse(c.started_at ?? c.start ?? '') || null,
         };
@@ -610,4 +613,60 @@ export function applyMediaLog(state: MediaState, text: string): {state: MediaSta
         }
     }
     return {state: next, matched};
+}
+
+// -- AI agent (`tuple connect`) ---------------------------------------------------
+
+/**
+ * Terminals we know how to run a command in, in the order they're tried, with
+ * the arguments that go before the command.
+ */
+export const TERMINALS: ReadonlyArray<readonly [string, readonly string[]]> = Object.freeze([
+    ['xdg-terminal-exec', []],
+    ['ptyxis', ['--new-window', '--']],
+    ['kgx', ['--']],
+    ['gnome-terminal', ['--']],
+    ['kitty', []],
+    ['alacritty', ['-e']],
+    ['foot', []],
+    ['wezterm', ['start', '--']],
+    ['konsole', ['-e']],
+    ['xterm', ['-e']],
+]);
+
+/**
+ * The argv that opens a terminal window running `command`. `custom` is the
+ * user's own prefix (already split, e.g. ["alacritty", "-e"]); otherwise the
+ * preferred terminal (GNOME's default-terminal setting) if we know it, then
+ * the first known one installed. `has` says whether a program is installed.
+ * Null when there's none.
+ */
+export function terminalArgv(command: string[], {custom = [], preferred = '', has}: {
+    custom?: string[], preferred?: string, has: (program: string) => boolean,
+}): string[] | null {
+    if (custom.length)
+        return has(custom[0]) ? [...custom, ...command] : null;
+    const known = new Map(TERMINALS.map(([name, args]) => [name, args]));
+    const order = known.has(preferred) ? [preferred, ...known.keys()] : [...known.keys()];
+    const name = order.find(has);
+    return name ? [name, ...known.get(name)!, ...command] : null;
+}
+
+/**
+ * `tuple connect` arguments: the current call when `callId` is empty (Tuple's
+ * default, which describes the active call), or a stored call by ID. The
+ * optional purpose goes after `--` so text starting with "-" isn't a flag.
+ */
+export function connectArgs(callId: string | null, purpose: string): string[] {
+    return ['connect', ...(callId ? ['--call', callId] : []), ...(purpose ? ['--', purpose] : [])];
+}
+
+/**
+ * Wraps `argv` so the terminal stays open when it fails, instead of the window
+ * vanishing with the error (e.g. no agent configured yet).
+ */
+export function holdOnFailure(argv: string[]): string[] {
+    const script = '"$@"; s=$?; if [ "$s" -ne 0 ]; then ' +
+        'printf "\\n%s exited with status %s. Press Enter to close." "\${1##*/} $2" "$s"; read -r _; fi';
+    return ['sh', '-c', script, 'sh', ...argv];
 }

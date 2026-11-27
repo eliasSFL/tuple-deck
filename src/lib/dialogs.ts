@@ -18,8 +18,12 @@ function makeEntry(hint: string, text = ''): St.Entry {
 }
 
 /** Resolves with the trimmed text, or null when cancelled or left empty. */
-export function promptText({title, description = '', hint = '', okLabel = 'OK', initial = ''}: {
-    title: string, description?: string, hint?: string, okLabel?: string, initial?: string,
+/**
+ * Asks for one line of text. Resolves with it, or null when cancelled; empty
+ * input counts as cancelling unless `allowEmpty`, which resolves with ''.
+ */
+export function promptText({title, description = '', hint = '', okLabel = 'OK', initial = '', allowEmpty = false}: {
+    title: string, description?: string, hint?: string, okLabel?: string, initial?: string, allowEmpty?: boolean,
 }): Promise<string | null> {
     return new Promise(resolve => {
         const dialog = new ModalDialog.ModalDialog({styleClass: 'tuple-deck-dialog'});
@@ -38,10 +42,11 @@ export function promptText({title, description = '', hint = '', okLabel = 'OK', 
             dialog.close();
         };
         dialog.connect('closed', () => resolve(result));
-        entry.clutter_text.connect('activate', () => finish(entry.get_text().trim() || null));
+        const value = () => entry.get_text().trim() || (allowEmpty ? '' : null);
+        entry.clutter_text.connect('activate', () => finish(value()));
         dialog.setButtons([
             {label: 'Cancel', action: () => finish(null), key: Clutter.KEY_Escape},
-            {label: okLabel, action: () => finish(entry.get_text().trim() || null), default: true},
+            {label: okLabel, action: () => finish(value()), default: true},
         ]);
         dialog.open();
     });

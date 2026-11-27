@@ -10,7 +10,7 @@ import {confirm, openSearchDialog, promptLoginCode, promptText} from './dialogs.
 import {
     type CallMember, type CaptureCall, type Contact, type Id, type Machine, type OngoingCall,
     type Room, type TupleSetting,
-    Status, captureCalls, contactRef, firstUrl, machinesOf, ongoingCallLabel, ongoingCalls,
+    type Call, Status, captureCalls, connectArgs, holdOnFailure, terminalArgv, contactRef, firstUrl, machinesOf, ongoingCallLabel, ongoingCalls,
     parseSettings, personName, personalRoom, roomLabel, searchHits,
 } from './model.js';
 import {type Notifier, Urgency} from './notify.js';
@@ -427,6 +427,92 @@ export class Actions {
             return false;
         const result = await this._do(['capture', 'delete', call.id], {label: 'Deleting call'});
         return result.ok;
+    }
+
+    /**
+     * The current call as `call show` reports it: unlike `state`, it has the
+     * title and summary. Null outside a call or on error.
+     */
+    async callDetails(): Promise<Call | null> {
+        const result = await this._cli.run(['call', 'show'], {timeout: 10});
+        const data = result.ok ? result.data : null;
+        return data && typeof data === 'object' && !Array.isArray(data) ? data as Call : null;
+    }
+
+    /**
+     * Asks for a new title for the current call (`callId` null) or a stored
+     * one, and sets it. An empty title clears it. Resolves true when changed.
+     */
+    async renameCall(callId: string | null, currentTitle: string): Promise<boolean> {
+        const title = await promptText({
+            title: 'Rename call',
+            description: 'Leave it empty to remove the title.',
+            hint: 'Call title',
+            okLabel: 'Rename',
+            initial: currentTitle,
+            allowEmpty: true,
+        });
+        if (title === null || title === currentTitle)
+            return false;
+        const args = ['call', 'edit', ...(callId ? [callId] : []), '--title', title];
+        return (await this._do(args, {label: 'Renaming the call'})).ok;
+    }
+
+    /**
+     * Starts your AI agent (`tuple connect`) in a terminal, with the current
+     * call (`callId` null) or a stored one as context, after asking what it
+     * should help with. The agent is set up with `tuple connect configure`.
+     */
+    async connectAgent(callId: string | null, what: string): Promise<void> {
+        const purpose = await promptText({
+            title: 'Ask an AI agent',
+            description: `Opens your AI agent in a terminal with ${what} as context ` +
+                '(tuple connect). Optionally say what you want help with.',
+            hint: 'What do you need? (optional)',
+            okLabel: 'Start agent',
+            allowEmpty: true,
+        });
+        if (purpose === null)
+            return;
+        const tuple = this._cli.binary;
+        if (!tuple) {
+            this._notifier.error('Tuple', 'The tuple CLI was not found');
+            return;
+        }
+        let custom: string[] = [];
+        const setting = this._settings.get_string('terminal-command').trim();
+        if (setting) {
+            try {
+                custom = GLib.shell_parse_argv(setting)[1] ?? [];
+            } catch (e) {
+                this._notifier.error("Couldn't start the agent", `Terminal command: ${(e as Error).message}`);
+                return;
+            }
+        }
+        let preferred = '';
+        try {
+            const schema = 'org.gnome.desktop.default-applications.terminal';
+            if (Gio.SettingsSchemaSource.get_default()?.lookup(schema, true))
+                preferred = new Gio.Settings({schema_id: schema}).get_string('exec');
+        } catch {}
+        const argv = terminalArgv(holdOnFailure([tuple, ...connectArgs(callId, purpose)]), {
+            custom,
+            preferred,
+            has: program => !!findProgram(program),
+        });
+        if (!argv) {
+            this._notifier.error("Couldn't start the agent", custom.length
+                ? `Terminal command not found: ${custom[0]}`
+                : 'No terminal found. Set one under Settings → Extension → Terminal command.');
+            return;
+        }
+        try {
+            const launcher = new Gio.SubprocessLauncher({flags: Gio.SubprocessFlags.NONE});
+            launcher.set_cwd(GLib.get_home_dir());
+            launcher.spawnv([findProgram(argv[0]) ?? argv[0], ...argv.slice(1)]);
+        } catch (e) {
+            this._notifier.error("Couldn't start the agent", (e as Error).message);
+        }
     }
 
     openSearch() {

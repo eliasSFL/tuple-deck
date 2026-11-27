@@ -33,12 +33,21 @@ and a crossed-out microphone when you are muted.
 | Idle | Start a call in your room, Join a link from the clipboard |
 | Incoming call | Who's calling + Answer (also as a notification with an Answer button) |
 | Calling someone | Ringing status + Cancel |
-| In a call | Title and timer, Mute, Share my screen, Share my webcam (opens Tuple's camera picker), Control their screen, Participants (remove), Reactions & more (sounds, emoji and animations, raise hand, screenshot of the shared screen, transcript capture), Leave |
-| Always | Your name and account in the header, Live calls (calls your teammates are on that you can join, or "No live calls"), Contacts (presence dot, ⭐ favourite, click to call, or to add to the current call, remove for contacts outside your team, invite someone by email), Rooms (join, copy link, ⭐, create team room), Recent calls (opens a Markdown export, delete, plus full-text search), your other machines, update banner, Settings, Stop Tuple, Log out |
+| In a call | Title and timer (with buttons to ask an AI agent about the call and to rename it), Mute, Share my screen, Share my webcam (opens Tuple's camera picker), Control their screen, Participants (remove), Reactions & more (sounds, emoji and animations, raise hand, screenshot of the shared screen, transcript capture), Leave |
+| Always | Your name and account in the header, Live calls (calls your teammates are on that you can join, or "No live calls"), Contacts (presence dot, ⭐ favourite, click to call, or to add to the current call, remove for contacts outside your team, invite someone by email), Rooms (join, copy link, ⭐, create team room), Recent calls (opens a Markdown export, ask an AI agent about it, rename, delete, plus full-text search), your other machines, update banner, Settings, Stop Tuple, Log out |
 
 **Notices posted into the call:** when an agent or integration posts a notice or
 asks a question in your current call (`tuple notifications`), it also shows up
 as a GNOME notification, and is withdrawn when it's answered or the call ends.
+
+**AI agent:** the terminal button on the call header, or on a Recent calls row,
+asks what you want help with (optional) and opens your AI agent in a terminal
+with that call as context (`tuple connect`). Set the agent up once with
+`tuple connect configure` in a terminal. The terminal is GNOME's default one if
+it's installed, otherwise the first of Ptyxis, Console, GNOME Terminal, kitty,
+Alacritty, foot, WezTerm, Konsole or xterm; Settings → Extension → Terminal
+command overrides it. If the agent fails to start, the terminal stays open to
+show why.
 
 **Keyboard shortcuts:** mute / unmute, answer, leave, and join the link on the
 clipboard, set under Settings → Extension. They work anywhere in GNOME, and
@@ -48,7 +57,7 @@ mute / unmute shows the result on screen.
 Tuple's own settings (annotation overlay, start muted, capture method,
 shared-screen mode, transcription model), plus the extension's options: call
 timer, notifications, keyboard shortcuts, the path to `tuple`, the update
-command and a debug log.
+command, the terminal for AI agents and a debug log.
 
 ## Requirements
 
@@ -99,7 +108,8 @@ leave it empty for the bundled one.
 | Need | CLI |
 |---|---|
 | Live state | `tuple --format json state follow`, `contacts follow`, `rooms follow`: long-running, one JSON snapshot per line, restarted with backoff if Tuple stops. `notifications follow` runs the same way, only while you're in a call |
-| Calls | `call start / accept / join / leave / mute / unmute / react / raise-hand / lower-hand`, `call participants add / remove`, `call list --joinable` (read when the menu opens) |
+| Calls | `call start / accept / join / leave / mute / unmute / react / raise-hand / lower-hand`, `call participants add / remove`, `call list --joinable` and `call show` (both read when the menu opens; `state` has no call title), `call edit --title` |
+| AI agent | `connect [--call <id>] [-- <purpose>]`, run in a terminal |
 | Webcam | `webcam start` (opens the camera picker), `webcam stop` |
 | Sharing state | Read-only watch of the daemon's log, `$XDG_DATA_HOME/tuple/<n>/log.txt`, for the lines that say screen or webcam sharing started or stopped |
 | What the CLI offers | `--help` and `call --help` (which commands exist), `call react --help` (which reactions exist), read at startup and on reconnect |
@@ -159,6 +169,7 @@ build/                  compiled JS + metadata, schemas, css, bin (what gets pac
 tests/model.test.js     unit tests, run against build/
 dev/sandbox.sh          headless GNOME Shell test run (see below)
 dev/mock-tuple          fake tuple CLI serving dev/fixtures/<scenario>/
+dev/fake-terminal       stand-in terminal for the sandbox: logs the agent command, then runs it
 dev/readonly-tuple      passes only read-only commands to the real CLI
 dev/test-helper/        sandbox-only extension that runs a plan: clicks, scenarios, screenshots
 dev/plans/*.json        test plans

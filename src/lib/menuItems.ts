@@ -120,6 +120,13 @@ export class HeaderItem extends PopupMenu.PopupBaseMenuItem {
         this.label_actor = title;
     }
 
+    /** Adds an icon button at the end of the row (the row itself isn't clickable). */
+    addButton(iconName: string, accessibleName: string, onClicked: () => void): St.Button {
+        const button = iconButton(iconName, accessibleName, onClicked);
+        this.add_child(button);
+        return button;
+    }
+
     update({title, subtitle = '', gicon = null, iconName = null}: {
         title: string, subtitle?: string, gicon?: Gio.Icon | null, iconName?: string | null,
     }) {
@@ -308,11 +315,16 @@ export class HistoryItem extends PopupMenu.PopupBaseMenuItem {
     }
 
     call: CaptureCall;
+    _agent: St.Button | null = null;
+    _rename: St.Button | null = null;
     private _delete: St.Button;
 
-    constructor(call: CaptureCall, {onActivate, onDelete}: {
+    /** onAgent / onRename add their buttons; left out when the CLI lacks the command. */
+    constructor(call: CaptureCall, {onActivate, onDelete, onRename, onAgent}: {
         onActivate: (call: CaptureCall) => void,
         onDelete: (call: CaptureCall) => void,
+        onRename?: (call: CaptureCall) => void,
+        onAgent?: (call: CaptureCall) => void,
     }) {
         super({style_class: 'tuple-deck-row'});
         this.call = call;
@@ -323,6 +335,15 @@ export class HistoryItem extends PopupMenu.PopupBaseMenuItem {
         });
         this.add_child(label);
         this.label_actor = label;
+        if (onAgent) {
+            this._agent = iconButton('utilities-terminal-symbolic', 'Ask an AI agent about this call',
+                () => onAgent(this.call));
+            this.add_child(this._agent);
+        }
+        if (onRename) {
+            this._rename = iconButton('document-edit-symbolic', 'Rename this call', () => onRename(this.call));
+            this.add_child(this._rename);
+        }
         this._delete = iconButton('user-trash-symbolic', 'Delete this call', () => onDelete(this.call));
         this.add_child(this._delete);
         this.connect('activate', () => onActivate(this.call));

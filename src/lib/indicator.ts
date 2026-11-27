@@ -50,6 +50,8 @@ export class TupleIndicator extends PanelMenu.Button {
     private _webcamGuess: boolean;
     private _capturingGuess: boolean;
     private _handGuess: boolean;
+    /** `call show` for the current call: the title and summary `state` leaves out. */
+    private _callDetails: Call | null = null;
     private _reactionsKey: string | null;
     private _guestMode: string | null;
     // True while _setSwitch() changes a switch, so its 'toggled' handler can tell that from a click.
@@ -89,6 +91,8 @@ export class TupleIndicator extends PanelMenu.Button {
     private _participantsSub!: PopupMenu.PopupSubMenuMenuItem;
     private _moreSub!: PopupMenu.PopupSubMenuMenuItem;
     private _snapshotItem!: LabelItem;
+    private _renameButton!: St.Button;
+    private _agentButton!: St.Button;
     private _leaveItem!: LabelItem;
     private _liveCallsSub!: PopupMenu.PopupSubMenuMenuItem;
     private _liveCallsList!: PopupMenu.PopupMenuSection;
@@ -245,6 +249,18 @@ export class TupleIndicator extends PanelMenu.Button {
     private _buildCallSection(section: PopupMenu.PopupMenuSection) {
         this._callHeader = new HeaderItem();
         section.addMenuItem(this._callHeader);
+        // On the header rather than in "Reactions & more", which already scrolls
+        // on a laptop screen; the same pair as on Recent calls rows.
+        this._agentButton = this._callHeader.addButton('utilities-terminal-symbolic',
+            'Ask an AI agent about this call', () => {
+                this.menu.close();
+                this._actions.connectAgent(null, 'this call');
+            });
+        this._renameButton = this._callHeader.addButton('document-edit-symbolic', 'Rename this call', async () => {
+            this.menu.close();
+            if (await this._actions.renameCall(null, this._callDetails?.title ?? ''))
+                await this._loadCallDetails();
+        });
 
         this._muteSwitch = new PopupMenu.PopupSwitchMenuItem('Mute microphone', false);
         this._onToggle(this._muteSwitch, async state => {
@@ -392,7 +408,24 @@ export class TupleIndicator extends PanelMenu.Button {
             this._machinesSub.menu.addMenuItem(this._item(m.name, () => this._actions.callMachine(m)));
         const guest = settings.find(s => s.name === 'guest-mode');
         this._guestMode = guest ? guest.value : null;
+        if (status === Status.IN_CALL)
+            await this._loadCallDetails();
         this._sync();
+    }
+
+    private async _loadCallDetails() {
+        const details = await this._actions.callDetails();
+        // Only keep it for the call we're still on.
+        this._callDetails = details && String(details.id ?? '') === this._callKey ? details : null;
+        this._sync();
+    }
+
+    /** The current call with the title and summary from `call show` filled in. */
+    private _shownCall(call: Call | null): Call | null {
+        const details = this._callDetails;
+        if (!call || !details)
+            return call;
+        return {...call, title: details.title ?? call.title, summary: details.summary ?? call.summary};
     }
 
     private async _loadHistory() {
@@ -414,6 +447,12 @@ export class TupleIndicator extends PanelMenu.Button {
                     if (await this._actions.deleteCapture(c))
                         this._loadHistory();
                 },
+                onRename: this._store.has('call edit') ? async c => {
+                    if (await this._actions.renameCall(c.id, c.realTitle))
+                        this._loadHistory();
+                } : undefined,
+                onAgent: this._store.has('connect')
+                    ? c => this._actions.connectAgent(c.id, `"${c.title}"`) : undefined,
             }));
         }
     }
@@ -430,9 +469,11 @@ export class TupleIndicator extends PanelMenu.Button {
         const inCall = status === Status.IN_CALL || status === Status.OUTGOING;
 
         // Reset optimistic switch state whenever a different call starts.
-        const callKey = inCall ? String(call?.id ?? 'call') : null;
+        // `state` names the call's ID call_id; incoming calls may use id.
+        const callKey = inCall ? String(call?.call_id ?? call?.id ?? 'call') : null;
         if (callKey !== this._callKey) {
             this._callKey = callKey;
+            this._callDetails = null;
             this._localCallStart = callKey ? Date.now() : null;
             this._mutedGuess = false;
             this._sharingGuess = false;
@@ -442,7 +483,7 @@ export class TupleIndicator extends PanelMenu.Button {
         }
 
         // `call list` may include the call you are already on.
-        const liveCalls = this._liveCalls.filter(c => !call || c.id !== String(call.id));
+        const liveCalls = this._liveCalls.filter(c => !call || c.id !== String(call.call_id ?? call.id));
 
         this._syncHeader(status, state);
         setVisible(
@@ -521,8 +562,9 @@ export class TupleIndicator extends PanelMenu.Button {
         const participants = participantsOf(call, selfId);
         const others = participants.filter(p => !p.isSelf);
         this._callHeader.update({
-            title: outgoing ? `Calling ${others.map(p => p.shortName).join(', ') || '…'}` : callTitle(call, selfId),
-            subtitle: outgoing ? 'Ringing…' : this._callSubtitle(call),
+            title: outgoing ? `Calling ${others.map(p => p.shortName).join(', ') || '…'}`
+                : callTitle(this._shownCall(call), selfId),
+            subtitle: outgoing ? 'Ringing…' : this._callSubtitle(this._shownCall(call)),
             iconName: outgoing ? 'call-outgoing-symbolic' : 'call-start-symbolic',
         });
         this._leaveItem.label.text = outgoing ? 'Cancel call' : 'Leave call';
@@ -554,6 +596,8 @@ export class TupleIndicator extends PanelMenu.Button {
             this._participantsSub, !outgoing && participants.length,
             this._moreSub, !outgoing,
             this._snapshotItem, !outgoing && (sharerKnown ? sharerId(call) !== null : true),
+            this._renameButton, !outgoing && this._store.has('call edit'),
+            this._agentButton, !outgoing && this._store.has('connect'),
         );
 
         this._participantsSub.label.text = `Participants (${participants.length})`;
@@ -739,8 +783,8 @@ export class TupleIndicator extends PanelMenu.Button {
             this._timerLabel.text = formatDuration((Date.now() - started) / 1000);
         if (this._store.status === Status.IN_CALL && this.menu.isOpen) {
             this._callHeader.update({
-                title: callTitle(call, this._store.selfId),
-                subtitle: this._callSubtitle(call),
+                title: callTitle(this._shownCall(call), this._store.selfId),
+                subtitle: this._callSubtitle(this._shownCall(call)),
                 iconName: 'call-start-symbolic',
             });
         }

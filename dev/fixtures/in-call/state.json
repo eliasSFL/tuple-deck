@@ -1,4 +1,4 @@
-{"in_call": true, "call": {"id": "c0ffee12-3456-7890-abcd-ef0123456789", "state": "active", "title": "", "summary": "",
+{"in_call": true, "call": {"call_id": "c0ffee12-3456-7890-abcd-ef0123456789", "state": "active", "title": "", "summary": "",
   "started_at": "__AGO_754__", "sharer_user_id": 2,
   "participants": [
     {"id": 1000, "email": "you@example.com", "full_name": "Alex Doe", "short_name": "Alex", "muted": false},

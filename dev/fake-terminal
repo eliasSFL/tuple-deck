@@ -1,0 +1,6 @@
+#!/bin/bash
+# Stand-in terminal for the sandbox (dev/sandbox.sh sets it as the extension's
+# terminal command): records what it was asked to run in the mock CLI's
+# commands.log, then runs it without a terminal.
+printf 'terminal %s\n' "$*" >> "$TUPLE_MOCK_DIR/commands.log"
+exec "$@" < /dev/null

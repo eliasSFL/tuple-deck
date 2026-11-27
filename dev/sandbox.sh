@@ -92,6 +92,9 @@ dbus-run-session -- bash -c '
     gsettings set org.gnome.desktop.session idle-delay 0
     GSETTINGS_SCHEMA_DIR="$REPO/build/schemas" \
         gsettings set org.gnome.shell.extensions.tuple-deck tuple-path "$TUPLE_BIN"
+    # Agents "open a terminal" through dev/fake-terminal, which only logs and runs.
+    GSETTINGS_SCHEMA_DIR="$REPO/build/schemas" \
+        gsettings set org.gnome.shell.extensions.tuple-deck terminal-command "$REPO/dev/fake-terminal"
 
     gnome-shell --headless --virtual-monitor 1600x900 --no-x11 > "$OUT/shell.log" 2>&1 &
     shell=$!

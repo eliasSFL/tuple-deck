@@ -3,7 +3,7 @@ import System from 'system';
 
 import {
     Status, callPhase, callTitle, callerName, captureCalls, deriveStatus, firstUrl,
-    DEFAULT_REACTIONS, applyMediaLog, formatDuration, joinNames, notificationCards, ongoingCallLabel, ongoingCalls,
+    DEFAULT_REACTIONS, applyMediaLog, connectArgs, formatDuration, holdOnFailure, terminalArgv, joinNames, notificationCards, ongoingCallLabel, ongoingCalls,
     parseHelpCommands, parseReactions, parseSettings, participantsOf, reactionLabel, roomLabel, searchHits,
     selfMuted, sortContacts,
 } from '../build/lib/model.js';
@@ -164,9 +164,30 @@ eq(applyMediaLog(off, '05:40:09.056|4489|4489|info|Call.cpp:2100|OnVideoCapturer
 eq(applyMediaLog({screen: true, webcam: true}, 'launching from pid 4382...\n'),
     {state: off, matched: true}, 'log: a new daemon resets sharing');
 
+// -- AI agent: tuple connect in a terminal ---------------------------------------------
+eq(connectArgs(null, ''), ['connect'], 'connect: current call, no purpose');
+eq(connectArgs('a1b2', 'why did the build fail?'), ['connect', '--call', 'a1b2', '--', 'why did the build fail?'],
+    'connect: stored call, purpose after --');
+eq(connectArgs(null, '-v'), ['connect', '--', '-v'], 'connect: purpose starting with - is not a flag');
+const installed = (...names) => name => names.includes(name);
+eq(terminalArgv(['tuple', 'connect'], {has: installed('ptyxis', 'kitty')}),
+    ['ptyxis', '--new-window', '--', 'tuple', 'connect'], 'terminal: first known one installed');
+eq(terminalArgv(['tuple', 'connect'], {preferred: 'kitty', has: installed('ptyxis', 'kitty')}),
+    ['kitty', 'tuple', 'connect'], "terminal: GNOME's default when installed");
+eq(terminalArgv(['tuple', 'connect'], {preferred: 'xdg-terminal-exec', has: installed('ptyxis')}),
+    ['ptyxis', '--new-window', '--', 'tuple', 'connect'], 'terminal: default not installed -> fallback');
+eq(terminalArgv(['tuple'], {custom: ['alacritty', '-e'], has: installed('alacritty')}),
+    ['alacritty', '-e', 'tuple'], 'terminal: custom prefix');
+eq(terminalArgv(['tuple'], {custom: ['nope'], has: installed('ptyxis')}), null, 'terminal: custom missing');
+eq(terminalArgv(['tuple'], {has: installed()}), null, 'terminal: none installed');
+eq(holdOnFailure(['tuple', 'connect']).slice(0, 2).concat(holdOnFailure(['tuple', 'connect']).slice(3)),
+    ['sh', '-c', 'sh', 'tuple', 'connect'], 'hold on failure: command passed as arguments, not in the script');
+
 // -- history ---------------------------------------------------------------------
 eq(captureCalls([{call_id: 'abc', participants: [ada], started_at: '2026-10-20T10:00:00Z'}]).map(c => [c.id, c.title]),
     [['abc', 'Ada Lovelace']], 'capture list array');
+eq(captureCalls([{call_id: 'abc', participants: [ada]}, {call_id: 'def', title: 'Pairing'}]).map(c => c.realTitle),
+    ['', 'Pairing'], 'capture list: real title, not the fallback, for renaming');
 eq(captureCalls({calls: [{id: 'x', title: 'Pairing'}]}).map(c => c.title), ['Pairing'], 'capture list wrapped');
 eq(searchHits({hits: [{call_id: 'abc', snippet: ' hello\n world ', speaker: ada}]}).map(h => [h.text, h.speaker]),
     [['hello world', 'Ada Lovelace']], 'search hits');
